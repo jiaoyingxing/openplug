@@ -1,0 +1,11 @@
+# Cross-platform line-ending normalization: repo stores LF, checkouts stay LF
+* text=auto eol=lf
+
+# Explicit text classification so diff/rename/whitespace behave consistently
+*.ts text
+*.mjs text
+*.ps1 text
+*.css text
+*.md text
+*.json text
+*.html text

@@ -1,0 +1,81 @@
+# OpenPlug — One-Click Plugin Freedom Without a VPN
+
+> [简体中文](./README.md) · **English**
+
+<p align="center">
+  <a href="https://github.com/jiaoyingxing/openplug/releases">
+    <img alt="Release downloads" src="https://img.shields.io/github/downloads/jiaoyingxing/openplug/total.svg?style=flat-square&label=Release%20downloads" />
+  </a>
+  <a href="https://github.com/jiaoyingxing/openplug/releases">
+    <img alt="Latest release" src="https://img.shields.io/github/v/release/jiaoyingxing/openplug?style=flat-square&label=Latest%20release" />
+  </a>
+  <a href="./README.md">
+    <img alt="CN 中文版" src="https://img.shields.io/badge/CN-%E4%B8%AD%E6%96%87%E7%89%88-d32f2f?style=flat-square" />
+  </a>
+  <a href="./README-en.md">
+    <img alt="EN English" src="https://img.shields.io/badge/EN-English-2f6fed?style=flat-square" />
+  </a>
+</p>
+
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click, exactly like the official website: open the community directory in a normal network environment, click **Add to Obsidian**, and OpenPlug handles the download and installation through domestic GitHub mirror acceleration. No command line, no manual unzip-and-copy, and no second app marketplace.
+
+## How to use
+
+Two entry points, pick either one:
+
+1. **Official community directory (recommended)**
+   - Open the [Obsidian Community Directory](https://community.obsidian.md/), browse and find the plugin or theme you need.
+   - Open its detail page and click **Add to Obsidian**.
+   - Confirm the redirect in Obsidian; the OpenPlug panel finishes the installation.
+2. **Search directly in the panel**
+   - Click the shopping-cart icon in the left ribbon, or run the command “Open plugin / theme installer” from the command palette.
+   - Type the plugin name, theme name, or author name in the search box and choose a result to install.
+
+Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
+
+## Features
+
+| Feature | Description |
+| --- | --- |
+| Protocol interception | Captures the official `Add to Obsidian` redirect (plugins and themes) and completes the install chain under restricted networks |
+| Official directory search | Searches the official plugin / theme list by name, author, or ID, with a Chinese UI |
+| Info card & translation | Shows version, author, ID, and compatibility; auto-translates plugin descriptions (falls back to the original text without blocking) |
+| Version selection | Lists published versions and installs the latest by default; older versions can be picked |
+| Multi-mirror acceleration | Races multiple domestic GitHub mirror nodes with a 30s timeout and SHA-256 cross-verification, auto-switching when a node fails |
+| Theme installation | Installs official themes through the same flow |
+| Desktop & mobile | Works on Windows / macOS / Linux and iOS / Android |
+| Mirror latency test | One-click latency probe in settings for all built-in mirrors |
+
+## Network usage & privacy disclosure
+
+At runtime the plugin only makes the following HTTPS requests, all for **public** data:
+
+- Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
+- Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `wget.la`, `gh.idayer.com` — used to download lists, manifests, and plugin files.
+- jsDelivr data API (`data.jsdelivr.com`): published version list for a plugin.
+- Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
+
+No user data is collected. No telemetry, no ads, no account required.
+
+## Notes & limitations
+
+- OpenPlug is not an official Obsidian feature — it is a helper for the installation channel only. Plugin / theme content is provided by their respective authors; verify source and permissions yourself.
+- Only plugins and themes **already listed in the official community directory** are supported.
+- Mirror nodes are free public services; availability and speed fluctuate with network conditions. If all nodes fail, re-run the latency test in settings and retry.
+- Licensing: this plugin is open source under the [MIT License](./LICENSE). Third-party plugins / themes you install follow their own licenses.
+
+## Compatibility
+
+- Minimum Obsidian version: `1.7.2`.
+- Desktop and mobile are both supported (`isDesktopOnly: false`).
+
+## Development
+
+```powershell
+npm run lint          # ESLint (obsidianmd recommended rules)
+npm run build         # typecheck + production build (output: dist/release)
+```
+
+The source is TypeScript and depends only on the Obsidian API and Web APIs (`crypto.subtle` for SHA-256 verification; no Node API). The bundle is produced with esbuild.
+
+Issues, PRs, and translation contributions are welcome. License: [LICENSE](./LICENSE).

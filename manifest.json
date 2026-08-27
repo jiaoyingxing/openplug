@@ -1,0 +1,9 @@
+{
+	"id": "openplug",
+	"name": "OpenPlug",
+	"version": "0.2.0",
+	"minAppVersion": "1.7.2",
+	"description": "Install official Obsidian community plugins via domestic mirror acceleration, without a VPN.",
+	"author": "Jiao Yingxing",
+	"isDesktopOnly": false
+}

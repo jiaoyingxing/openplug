@@ -1,0 +1,7 @@
+node_modules/
+main.js
+dist/
+runtime-artifacts.local.json
+*.map
+package-lock.json.bak
+.DS_Store
