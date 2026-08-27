@@ -19,6 +19,11 @@
 
 OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click, exactly like the official website: open the community directory in a normal network environment, click **Add to Obsidian**, and OpenPlug handles the download and installation through domestic GitHub mirror acceleration. No command line, no manual unzip-and-copy, and no second app marketplace.
 
+## Installation
+
+1. **Community directory (recommended)**: Obsidian → Settings → Third-party plugins → turn off Safe mode → Browse community plugins → search **OpenPlug** → Install and enable.
+2. **Manual installation**: download `main.js`, `manifest.json`, and `styles.css` from [GitHub Releases](https://github.com/jiaoyingxing/openplug/releases), place them in `.obsidian/plugins/openplug/` inside your vault (the same path under the app data folder on mobile), restart Obsidian, and enable the plugin in the community plugins list. The BRAT plugin can also track prerelease builds from `jiaoyingxing/openplug`.
+
 ## How to use
 
 Two entry points, pick either one:

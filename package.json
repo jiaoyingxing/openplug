@@ -1,12 +1,16 @@
 {
   "name": "openplug",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Install official Obsidian community plugins via domestic mirror acceleration, without a VPN.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "typecheck": "tsc -noEmit -skipLibCheck",
     "build": "npm run typecheck && node esbuild.config.mjs production",
+    "sync": "node scripts/sync-runtime.mjs",
+    "verify:runtime": "node scripts/verify-runtime.mjs",
+    "build:verify": "npm run build && npm run verify:runtime",
+    "deploy": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1",
     "lint": "eslint src"
   },
   "keywords": [
@@ -16,7 +20,6 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.2",
     "eslint": "^9.39.5",
     "eslint-plugin-obsidianmd": "^0.4.1",

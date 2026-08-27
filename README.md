@@ -17,7 +17,14 @@
   </a>
 </p>
 
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click. It captures the official “Add to Obsidian” redirect, then downloads and installs through domestic GitHub mirror acceleration — no command line or manual copying required. Full English version: [README-en.md](./README-en.md).
+
 OpenPlug 让没有 VPN 的中国用户也能像官网一样，**一键安装 Obsidian 官方社区插件和主题**：在国内网络环境下打开官方社区页面、点击 “Add to Obsidian”，剩下的下载与安装由 OpenPlug 经国内 GitHub 镜像加速完成。不需要命令行，不需要手动解压复制，也不需要第二个应用市场。
+
+## 安装
+
+1. **官方社区商店（推荐）**：Obsidian → 设置 → 第三方插件 → 关闭安全模式 → 浏览社区插件 → 搜索 **OpenPlug** → 安装并启用。
+2. **手动安装**：从 [GitHub Releases](https://github.com/jiaoyingxing/openplug/releases) 下载 `main.js`、`manifest.json`、`styles.css` 三个文件，放入 vault 下的 `.obsidian/plugins/openplug/` 目录（移动端为对应应用文件夹内的同一路径），重启 Obsidian 后在第三方插件列表中启用。也可用 BRAT 插件添加 `jiaoyingxing/openplug` 跟踪预发布版本。
 
 ## 使用方式
 
