@@ -8,7 +8,7 @@ if (-not (Test-Path $log)) {
 
 $suffix = 'https://raw.githubusercontent.com/blacksmithgu/obsidian-dataview/master/manifest.json'
 $bigList = 'https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json'
-$mirrors = @('', 'https://gh-proxy.com/', 'https://ghproxy.net/', 'https://ghfast.top/', 'https://wget.la/')
+$mirrors = @('', 'https://gh-proxy.com/', 'https://ghfast.top/', 'https://wget.la/', 'https://gh.idayer.com/')
 $lastBigDay = $null
 
 function Probe($url, $mirrorLabel, $target) {
