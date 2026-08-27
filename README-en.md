@@ -17,7 +17,7 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click, exactly like the official website: open the community directory in a normal network environment, click **Add to Obsidian**, and OpenPlug handles the download and installation through domestic GitHub mirror acceleration. No command line, no manual unzip-and-copy, and no second app marketplace.
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors — no manual steps required.
 
 ## Installation
 
