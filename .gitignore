@@ -5,3 +5,4 @@ runtime-artifacts.local.json
 *.map
 package-lock.json.bak
 .DS_Store
+.tmp/

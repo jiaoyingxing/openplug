@@ -17,9 +17,9 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click “Add to Obsidian” on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors — no manual steps required. Full English version: [README-en.md](./README-en.md).
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click “Add to Obsidian” on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors. Full English version: [README-en.md](./README-en.md).
 
-OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件和主题：点击官方社区的 “Add to Obsidian”，OpenPlug 即经国内 GitHub 镜像加速完成下载、校验与安装，无需任何手动操作。
+OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件和主题：点击官方社区的 “Add to Obsidian”，OpenPlug 即经国内 GitHub 镜像加速完成下载、校验与安装。
 
 ## 安装
 
@@ -28,17 +28,14 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 
 ## 使用方式
 
-两种入口，任选其一：
+入口较多，任选其一：
 
-1. **官方社区路径（推荐）**
-   - 打开 [Obsidian 官方社区](https://community.obsidian.md/)，浏览并找到需要的插件或主题。
-   - 进入详情页，点击 **Add to Obsidian**。
-   - 在 Obsidian 中同意跳转，自动回到 OpenPlug 面板完成安装。
-2. **面板内直接搜索**
-   - 点击左侧边栏的购物车图标，或通过命令面板执行「打开插件 / 主题安装器」。
-   - 在搜索框输入插件名、主题名或作者名，从结果中选择并安装。
+1. **网页浏览时（推荐）**：[官方社区](https://community.obsidian.md/) 打开插件或主题详情页，点击 **Add to Obsidian**，浏览器唤起 Obsidian 后自动回到 OpenPlug 面板完成安装。
+2. **侧边栏购物车图标**：电脑上点击左侧边栏的购物车图标；手机上从屏幕左边缘向右滑出侧边栏，点击同样的图标。
+3. **命令面板**：执行「打开插件 / 主题安装器」命令。
+4. **插件设置页**：Obsidian → 设置 → 第三方插件 → OpenPlug，点击顶部「打开」按钮。
 
-安装时会先展示插件信息卡（版本 / 作者 / ID / 兼容性）与简介译文，可自选安装版本；确认后一键下载、校验、安装并启用。
+打开安装器后，在搜索框输入插件名、主题名或作者名，从结果中选择并安装。安装时会先展示插件信息卡（版本 / 作者 / ID / 兼容性）与简介译文，可自选安装版本；确认后一键下载、校验、安装并启用。
 
 ## 主要功能
 
@@ -58,7 +55,7 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 运行时只发起以下 HTTPS 请求，全部用于获取**公开**数据：
 
 - 官方清单：`community-plugins.json` 与 `community-css-themes.json`（用于搜索与跳转解析）。
-- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`wget.la`、`gh.idayer.com` —— 用于下载清单、manifest 与插件文件。
+- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`wget.la` —— 用于下载清单、manifest 与插件文件。
 - jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件历史版本列表。
 - 翻译接口（仅发送**公开的插件描述文本**，用于侧栏简介的中英互译）：`uapis.cn`（主源）、`api.mymemory.translated.net`（兜底）。
 

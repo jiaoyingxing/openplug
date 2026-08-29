@@ -17,61 +17,50 @@
 }
 
 .openplug-banner {
+	position: relative;
+	overflow: hidden;
+	/* 并发操作各占一行（2026-08-30 用户要求并列显示） */
 	display: flex;
-	align-items: center;
-	gap: var(--size-4-2);
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--size-2-1);
 	margin: var(--size-4-2) 0 0;
-	padding: var(--size-4-1) var(--size-4-2);
-	border-radius: var(--radius-s);
+	padding: var(--size-4-2);
 	font-size: var(--font-ui-small);
-	background: var(--background-secondary);
 	color: var(--text-normal);
-	border: 1px solid var(--background-modifier-border);
 }
 
 .openplug-banner.is-hidden {
 	display: none;
 }
 
-.openplug-banner.is-loading {
+/* 状态行：成功/失败用官方浅色底芯片（rgba(rgb 变量, 0.2)，与官方
+   diff 视图同款模式；主题联动）；加载行透明仅文字 muted，活动反馈由
+   壳体上的官方加载条承担（见下）。 */
+.openplug-banner-line {
+	padding: var(--size-4-1) var(--size-4-2);
+	border-radius: var(--radius-s);
+}
+
+.openplug-banner-line.is-loading {
 	color: var(--text-muted);
-	background: transparent;
-	border-color: transparent;
 }
 
-.openplug-banner.is-success {
-	color: var(--text-success);
-	border-color: var(--text-success);
+.openplug-banner-line.is-success {
+	background-color: rgba(var(--background-modifier-success-rgb), 0.2);
 }
 
-.openplug-banner.is-error {
-	color: var(--text-error);
-	border-color: var(--text-error);
+.openplug-banner-line.is-error {
+	background-color: rgba(var(--background-modifier-error-rgb), 0.2);
 }
 
-.openplug-banner::before {
-	content: "";
-	flex: 0 0 auto;
-	width: 14px;
-	height: 14px;
-	border: 2px solid currentColor;
-	border-top-color: transparent;
-	border-radius: 50%;
-	animation: openplug-spin 0.8s linear infinite;
-}
-
-.openplug-banner:not(.is-loading)::before {
+/* 加载动效直接用官方元素：核心裸选择器 .is-loading:before（顶部 3px
+   accent 呼吸条 + progress-bar 动画）在壳体有 is-loading 时自然生效，
+   主题联动、无需自绘（2026-08-30 用户要求：不再自造彗星线）。
+   行级仍需显式压制核心裸选择器——状态行也带 is-loading 类，否则每行
+   都会各自长出一条加载条（用户要求顶部只留一条总的）。 */
+.openplug-banner-line.is-loading::before {
 	display: none;
-}
-
-.openplug-banner.is-loading::before {
-	display: none;
-}
-
-@keyframes openplug-spin {
-	to {
-		transform: rotate(360deg);
-	}
 }
 
 .openplug-search {
@@ -146,10 +135,21 @@
 	padding: var(--size-4-2) 0;
 }
 
-.openplug-empty-intro {
-	margin: 0 0 var(--size-4-2);
-	font-weight: var(--font-semibold);
-	color: var(--text-normal);
+/* 壳外板块标题：对齐官方设置组标题（.setting-item-heading 规格：
+   --setting-group-heading-* 变量、透明底、横向 padding 与卡片一致、
+   上距 24px 下距 16px = 官方组间距/标题距；2026-08-30 用户要求
+   「加粗大标题挪出板块，设置页观感」）。 */
+.openplug-heading {
+	background-color: transparent;
+	color: var(--setting-group-heading-color, var(--text-normal));
+	font-size: var(--setting-group-heading-size, var(--font-ui-medium));
+	font-weight: var(--setting-group-heading-weight, var(--font-semibold));
+	padding: 0 var(--size-4-3);
+	margin: var(--size-4-6) 0 var(--size-4-4);
+}
+
+.openplug-heading:first-child {
+	margin-top: 0;
 }
 
 .openplug-steps {
@@ -162,12 +162,61 @@
 	margin: var(--size-4-1) 0;
 }
 
-.openplug-empty-note {
-	margin-top: var(--size-4-2);
-	padding-top: var(--size-4-2);
-	border-top: 1px solid var(--background-modifier-border);
+/* 主页底部：已安装插件更新卡（2026-08-30 用户确认布局——更新板块在
+   最下面，注句并入使用方式卡） */
+.openplug-updates {
+	margin-top: var(--size-4-3);
+	padding: var(--size-4-3);
+}
+
+.openplug-updates-status {
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
-	color: var(--text-faint);
+	line-height: var(--line-height-normal);
+}
+
+.openplug-updates-retry {
+	margin-top: var(--size-4-1);
+}
+
+/* 轻列表取向（2026-08-30 用户要求）：行 padding 收窄为 8px 0（原 16px
+   过宽）、名称去掉加粗（原 font-medium 过重），分隔线只出现在行之间
+   （官方 setting-item 节奏）。 */
+.openplug-update-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) 0;
+}
+
+.openplug-update-row + .openplug-update-row {
+	border-top: var(--border-width) solid var(--background-modifier-border);
+}
+
+.openplug-update-info {
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.openplug-update-name {
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	line-height: var(--line-height-tight);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 行内 meta（作者/版本）降级为官方社区列表 author 级别 */
+.openplug-update-row .openplug-metaline,
+.openplug-update-row .openplug-metaline-value {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.openplug-update-btn {
+	flex: 0 0 auto;
 }
 
 .openplug-empty a {
@@ -186,12 +235,6 @@
 	font-weight: var(--font-bold);
 }
 
-.openplug-id {
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
-	word-break: break-all;
-}
-
 .openplug-desc {
 	margin: 0;
 	color: var(--text-muted);
@@ -208,11 +251,35 @@
 	padding-left: var(--size-4-2);
 }
 
+/* 详情卡、操作面板、主页两板块与顶部状态框共用官方「设置组」表面
+   （SettingGroup 的 --setting-items-* 变量族，Obsidian ≥ 1.11，
+   minAppVersion 已覆盖）：主题覆写这些变量时这些板块与设置页卡片同步
+   换肤，不再自绘灰底。默认亮色下取 --background-primary-alt（#fafafa，
+   比 --background-secondary #f6f6f6 更浅）；圆角 --setting-items-radius =
+   --radius-l（12px），比原 --radius-m（8px）更圆润。 */
+.openplug-infocard,
+.openplug-actions,
+.openplug-home-card,
+.openplug-updates,
+.openplug-banner {
+	background-color: var(
+		--setting-items-background,
+		var(--background-primary-alt, var(--background-secondary))
+	);
+	border-radius: var(--setting-items-radius, var(--radius-l));
+	border: var(--setting-items-border-width, 0)
+		solid
+		var(--setting-items-border-color, var(--background-modifier-border));
+}
+
+/* 主页顶部：使用方式整体卡（含注句，注句不垫页底） */
+.openplug-home-card {
+	padding: var(--size-4-3);
+}
+
 .openplug-infocard {
 	position: relative;
 	margin-top: var(--size-4-3);
-	background: var(--background-secondary);
-	border-radius: var(--radius-m);
 	padding: var(--size-4-3);
 }
 
@@ -253,10 +320,6 @@
 	word-break: break-all;
 }
 
-.openplug-group > .openplug-metaline:first-child {
-	margin-top: 0;
-}
-
 .openplug-metaline-label {
 	color: var(--text-muted);
 }
@@ -274,8 +337,6 @@
 
 .openplug-actions {
 	margin-top: var(--size-4-3);
-	background: var(--background-secondary);
-	border-radius: var(--radius-m);
 	padding: var(--size-4-3);
 }
 
@@ -294,8 +355,21 @@
 	margin-top: var(--size-4-3);
 }
 
+/* 每行 = 标签（非链接，--text-muted 与 metaline 标签一致）+ 冒号后的值链接 */
+.openplug-source-line {
+	display: flex;
+	align-items: baseline;
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight);
+	word-break: break-all;
+}
+
+.openplug-source-label {
+	flex: 0 0 auto;
+	color: var(--text-muted);
+}
+
 .openplug-source {
-	display: inline-block;
 	color: var(--text-accent);
 	font-size: var(--font-ui-small);
 	text-decoration: none;
@@ -310,49 +384,10 @@
 	color: var(--text-muted);
 }
 
-.openplug-notice {
-	margin-top: var(--size-4-1);
-}
-
-.openplug-notice p {
-	margin: 0 0 var(--size-4-2);
-	line-height: var(--line-height-normal);
-}
-
-.openplug-notice p:last-child {
-	margin-bottom: 0;
-}
-
-.openplug-notice ul {
-	margin: 0 0 var(--size-4-2);
-	padding-left: var(--size-4-4);
-}
-
-.openplug-notice li {
-	margin: var(--size-4-1) 0;
-}
-
-.openplug-health {
-	margin-top: var(--size-4-1);
-}
-
-.openplug-health .mod-cta {
-	margin-bottom: var(--size-4-2);
-}
-
-.openplug-health-list {
-	display: block;
-}
-
-.openplug-health-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--size-4-2);
-	padding: var(--size-4-2) 0;
-	border-top: 1px solid var(--background-modifier-border);
-}
-
-.openplug-health-name {
-	color: var(--text-normal);
+/* 桥接管窗口内隐藏官方社区详情弹层（main.ts suppressOfficialSheet）：
+   抑制类在 appUrlOpen 同一同步派发批次内加入，官方 sheet 从未被绘制；
+   接管结束（关闭成功或 2s 兜底）后移除，不影响其他弹窗。 */
+body.openplug-hide-modals .modal-container,
+body.openplug-hide-modals .modal-bg {
+	display: none !important;
 }

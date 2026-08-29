@@ -1,4 +1,4 @@
-import { App, Notice, requestUrl } from "obsidian";
+import { App, requestUrl } from "obsidian";
 
 import { PROBE_TIMEOUT_MS, REQUEST_TIMEOUT_MS, withTimeout } from "./util";
 
@@ -12,7 +12,6 @@ export const MIRRORS: Mirror[] = [
 	{ id: "gh-proxy", label: "gh-proxy.com", prefix: "https://gh-proxy.com/" },
 	{ id: "ghfast", label: "ghfast.top", prefix: "https://ghfast.top/" },
 	{ id: "wget-la", label: "wget.la", prefix: "https://wget.la/" },
-	{ id: "idayer", label: "gh.idayer.com", prefix: "https://gh.idayer.com/" },
 ];
 
 const LIST_URL =
@@ -20,12 +19,6 @@ const LIST_URL =
 const THEME_LIST_URL =
 	"https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-css-themes.json";
 const RAW_BASE = "https://raw.githubusercontent.com/";
-
-interface ListEntry {
-	id: string;
-	repo: string;
-	author: string;
-}
 
 export interface PluginInfo {
 	id: string;
@@ -74,14 +67,18 @@ async function fetchManifestText(repo: string, prefix: string): Promise<string> 
 	throw new Error(lastErr || "manifest 拉取失败");
 }
 
+/** 插件安装目标文件数（installPlugin 的 targets 长度；顶部进度计数用，
+	 * 与进度文案「（n/3）」一致）。 */
+export const INSTALL_TARGET_FILES = 3;
+/** 主题安装进度节拍数（installTheme 的 onProgress 次数）。 */
+export const INSTALL_THEME_BEATS = 2;
+
 function fetchInfoFrom(
 	mirror: Mirror,
+	list: PluginListItem[],
 	pluginId: string,
 ): Promise<{ info: PluginInfo; mirror: Mirror }> {
 	return (async () => {
-		const list = JSON.parse(
-			await withTimeout(getText(mirror.prefix + LIST_URL), REQUEST_TIMEOUT_MS),
-		) as ListEntry[];
 		const entry = list.find((e) => e.id === pluginId);
 		if (!entry) {
 			throw new NotFoundError(pluginId);
@@ -224,6 +221,8 @@ export async function installTheme(
 	}
 	await app.vault.adapter.writeBinary(`${dir}/theme.css`, css);
 
+	// 第二个进度节拍（视图按 2 个文件计数，见 doInstallTheme）
+	onProgress("manifest.json");
 	try {
 		const man = await downloadFromRepo(theme.repo, "manifest.json");
 		if (man) {
@@ -238,13 +237,13 @@ export async function installTheme(
 			setConfig(key: string, value: string): Promise<void>;
 		}
 	).setConfig("cssTheme", theme.name);
-	new Notice(`已安装并启用主题：${theme.name}`);
 }
 
 export async function fetchPluginInfo(
+	list: PluginListItem[],
 	pluginId: string,
 ): Promise<{ info: PluginInfo; mirror: Mirror }> {
-	return withRetry(() => promiseAny(MIRRORS.map((m) => fetchInfoFrom(m, pluginId))));
+	return withRetry(() => promiseAny(MIRRORS.map((m) => fetchInfoFrom(m, list, pluginId))));
 }
 
 export interface MirrorProbe {
@@ -266,7 +265,7 @@ export async function probeMirrorsHealth(): Promise<MirrorProbe[]> {
 	);
 }
 
-export async function fetchVersions(repo: string): Promise<string[]> {
+export async function fetchVersions(repo: string, maxVersions = 15): Promise<string[]> {
 	const res = await withTimeout(
 		requestUrl({ url: `https://data.jsdelivr.com/v1/package/gh/${repo}` }),
 		REQUEST_TIMEOUT_MS,
@@ -276,7 +275,38 @@ export async function fetchVersions(repo: string): Promise<string[]> {
 	}
 	const data = JSON.parse(res.text) as { versions?: string[] };
 	const versions = Array.isArray(data.versions) ? data.versions : [];
-	return versions.slice(0, 15);
+	return versions.slice(0, maxVersions);
+}
+
+/** 已安装插件版本快照（更新检测输入；插件目录里有 manifest 就算已安装）。 */
+export interface InstalledPluginCheck {
+	id: string;
+	version: string;
+}
+
+/** 检测出的可更新项：官方清单内插件 + 最新稳定版 ≠ 本地版本。 */
+export interface PluginUpdateEntry {
+	id: string;
+	name: string;
+	author: string;
+	repo: string;
+	installedVersion: string;
+	latestVersion: string;
+}
+
+/** 稳定版标签：纯数字点分段。jsDelivr 版本列表按 tag 时间倒序且含预发布
+ * （实测 excalidraw 首项是 2.27.0-beta.8），更新提示不能拿首项当最新。 */
+function isStableVersion(v: string): boolean {
+	return /^\d+(\.\d+)+$/.test(v);
+}
+
+/** 官方插件最新稳定发布版（无则 null）。jsDelivr 数据 API 直连，不走公益
+ * 镜像、不受其共享限流；与版本下拉同一数据源（DECISIONS 镜像策略）。 */
+export async function fetchLatestStableVersion(
+	repo: string,
+): Promise<string | null> {
+	const versions = await fetchVersions(repo, 200);
+	return versions.find(isStableVersion) ?? null;
 }
 
 async function sha256(buf: ArrayBuffer): Promise<string> {
@@ -339,6 +369,11 @@ export async function installPlugin(
 	];
 
 	const dir = `${app.vault.configDir}/plugins/${info.id}`;
+	// 安装前目录已有 manifest = 更新/重装：保持用户当前的启停状态，绝不
+	// 擅自启用原本未启用的插件（2026-08-30 用户要求）；仅全新安装自动
+	// 启用（对应按钮语义「下载安装并启用」）。必须在本操作写任何文件
+	// 之前判定（写在后面会因 manifest 已写入而恒为 true）。
+	const wasInstalled = await app.vault.adapter.exists(`${dir}/manifest.json`);
 	await app.vault.adapter.mkdir(dir);
 
 	for (const target of targets) {
@@ -374,8 +409,7 @@ export async function installPlugin(
 		}
 	).plugins;
 	await plugins.loadManifests();
-	if (!plugins.enabledPlugins.has(info.id)) {
+	if (!wasInstalled && !plugins.enabledPlugins.has(info.id)) {
 		await plugins.enablePluginAndSave(info.id);
 	}
-	new Notice(`已安装并启用：${info.name}`);
 }

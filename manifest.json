@@ -1,8 +1,8 @@
 {
 	"id": "openplug",
 	"name": "OpenPlug",
-	"version": "0.2.1",
-	"minAppVersion": "1.7.2",
+	"version": "0.3.0",
+	"minAppVersion": "1.11.4",
 	"description": "Install official community plugins via domestic mirror acceleration, without a VPN.",
 	"author": "Jiao Yingxing",
 	"isDesktopOnly": false

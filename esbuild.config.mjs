@@ -38,14 +38,25 @@ const context = await esbuild.context({
 	treeShaking: true,
 	minify: prod,
 	legalComments: "none",
+	// UTF-8 直出（默认 ascii 会把每个中文转义成 \uXXXX 的 6 字节；
+	// Obsidian 按 UTF-8 读取插件 JS，中文每字 3 字节即可，实测省 ~9%）。
+	charset: "utf8",
 	outfile: "dist/release/main.js",
 });
 
 if (prod) {
 	await context.rebuild();
 	await context.dispose();
+	// styles.css 走 esbuild 压缩（去注释/空白，语义不变）；仓库根保留可读源
+	await esbuild.build({
+		entryPoints: ["styles.css"],
+		bundle: false,
+		minify: true,
+		outfile: "dist/release/styles.css",
+		logLevel: "error",
+	});
 	const releaseDir = "dist/release";
-	for (const f of ["manifest.json", "styles.css", "versions.json"]) {
+	for (const f of ["manifest.json", "versions.json"]) {
 		if (fs.existsSync(f)) {
 			fs.copyFileSync(f, path.join(releaseDir, f));
 			console.log(`copied ${f} -> ${releaseDir}`);

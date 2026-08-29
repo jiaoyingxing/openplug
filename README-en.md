@@ -17,7 +17,7 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors — no manual steps required.
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors.
 
 ## Installation
 
@@ -26,17 +26,14 @@ OpenPlug lets users without a VPN install official Obsidian community plugins an
 
 ## How to use
 
-Two entry points, pick either one:
+Several entry points — pick whichever is handy:
 
-1. **Official community directory (recommended)**
-   - Open the [Obsidian Community Directory](https://community.obsidian.md/), browse and find the plugin or theme you need.
-   - Open its detail page and click **Add to Obsidian**.
-   - Confirm the redirect in Obsidian; the OpenPlug panel finishes the installation.
-2. **Search directly in the panel**
-   - Click the shopping-cart icon in the left ribbon, or run the command “Open plugin / theme installer” from the command palette.
-   - Type the plugin name, theme name, or author name in the search box and choose a result to install.
+1. **While browsing the web (recommended)**: open a plugin or theme detail page on the [Obsidian Community Directory](https://community.obsidian.md/) and click **Add to Obsidian**; the browser opens Obsidian and OpenPlug finishes the installation automatically.
+2. **Shopping-cart icon in the sidebar**: on desktop, click the icon in the left ribbon; on mobile, swipe right from the left edge of the screen to reveal the sidebar and tap the same icon.
+3. **Command palette**: run the command “Open plugin / theme installer”.
+4. **Plugin settings page**: Obsidian → Settings → Third-party plugins → OpenPlug, then click the **Open** button at the top.
 
-Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
+Once the installer is open, type a plugin name, theme name, or author name in the search box and pick a result. Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
 
 ## Features
 
@@ -56,7 +53,7 @@ Before installing, OpenPlug shows an info card (version / author / ID / compatib
 At runtime the plugin only makes the following HTTPS requests, all for **public** data:
 
 - Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
-- Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `wget.la`, `gh.idayer.com` — used to download lists, manifests, and plugin files.
+- Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `wget.la` — used to download lists, manifests, and plugin files.
 - jsDelivr data API (`data.jsdelivr.com`): published version list for a plugin.
 - Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
 
