@@ -19,14 +19,14 @@
 
 OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click.
 
-## Installation
+## 1 Installation
 
 1. **Community directory (recommended)**: Obsidian → Settings → Third-party plugins → turn off Safe mode → Browse community plugins → search **OpenPlug** → Install and enable.
 2. **Manual installation**: download `main.js`, `manifest.json`, and `styles.css` from [GitHub Releases](https://github.com/jiaoyingxing/openplug/releases), place them in `.obsidian/plugins/openplug/` inside your vault (the same path under the app data folder on mobile), restart Obsidian, and enable the plugin in the community plugins list. The BRAT plugin can also track prerelease builds from `jiaoyingxing/openplug`.
 
-## How to use
+## 2 How to use
 
-### Opening the installer
+### 2.1 Opening the installer
 
 Pick whichever is handy:
 
@@ -35,15 +35,15 @@ Pick whichever is handy:
 - **Settings page**: Obsidian → Settings → Third-party plugins → OpenPlug, then click **Open** under “Open plugin interface”.
 - **Community directory redirect (recommended)**: open a plugin or theme detail page on the [Obsidian Community Directory](https://community.obsidian.md/) and click **Add to Obsidian**; confirm the redirect in your browser and the installer opens automatically.
 
-### Installing a plugin or theme
+### 2.2 Installing a plugin or theme
 
 Type a plugin name, theme name, or author name in the search box and pick a result. Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
 
-### Updating plugins
+### 2.3 Updating plugins
 
 The installer home page automatically checks your installed official plugins for updates (stable versions only) and lists them one by one; click **Update** and restart Obsidian for the new version to take effect. Updates are always started by you, never automatic, and never change a plugin's enabled state.
 
-## Features
+## 3 Features
 
 | Feature | Description |
 | --- | --- |
@@ -57,7 +57,7 @@ The installer home page automatically checks your installed official plugins for
 | Plugin update checks | The home page lists updatable installed official plugins (stable versions only); updates run one by one, are manual only, and keep each plugin's enabled state |
 | Mirror latency test | One-click latency probe in settings for all built-in mirrors |
 
-## Network usage & privacy disclosure
+## 4 Network usage & privacy disclosure
 
 At runtime the plugin only makes the following HTTPS requests, all for **public** data:
 
@@ -68,19 +68,19 @@ At runtime the plugin only makes the following HTTPS requests, all for **public*
 
 No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
-## Notes & limitations
+## 5 Notes & limitations
 
 - OpenPlug is not an official Obsidian feature — it is a helper for the installation channel only. Plugin / theme content is provided by their respective authors; verify source and permissions yourself.
-- Only plugins and themes **already listed in the official community directory** are supported.
+- Only plugins and themes **already listed in the official community directory** are supported (plugins not in the official list can be installed via [BRAT](https://github.com/TfTHacker/obsidian42-brat)).
 - Mirror nodes are free public services; availability and speed fluctuate with network conditions. If all nodes fail, re-run the latency test in settings and retry.
 - Licensing: this plugin is open source under the [MIT License](./LICENSE). Third-party plugins / themes you install follow their own licenses.
 
-## Compatibility
+## 6 Compatibility
 
 - Minimum Obsidian version: `1.11.4`.
 - Desktop and mobile are both supported (`isDesktopOnly: false`).
 
-## Development
+## 7 Development
 
 ```powershell
 npm run lint          # ESLint (obsidianmd recommended rules)
@@ -89,4 +89,4 @@ npm run build         # typecheck + production build (output: dist/release)
 
 The source is TypeScript and depends only on the Obsidian API and Web APIs (`crypto.subtle` for SHA-256 verification; no Node API). The bundle is produced with esbuild.
 
-Issues, PRs, and translation contributions are welcome. License: [LICENSE](./LICENSE).
+Issues or PRs are welcome. License: [LICENSE](./LICENSE).
