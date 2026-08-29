@@ -17,7 +17,7 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors.
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors — no manual steps required.
 
 ## Installation
 
@@ -26,14 +26,22 @@ OpenPlug lets users without a VPN install official Obsidian community plugins an
 
 ## How to use
 
-Several entry points — pick whichever is handy:
+### Opening the installer
 
-1. **While browsing the web (recommended)**: open a plugin or theme detail page on the [Obsidian Community Directory](https://community.obsidian.md/) and click **Add to Obsidian**; the browser opens Obsidian and OpenPlug finishes the installation automatically.
-2. **Shopping-cart icon in the sidebar**: on desktop, click the icon in the left ribbon; on mobile, swipe right from the left edge of the screen to reveal the sidebar and tap the same icon.
-3. **Command palette**: run the command “Open plugin / theme installer”.
-4. **Plugin settings page**: Obsidian → Settings → Third-party plugins → OpenPlug, then click the **Open** button at the top.
+Pick whichever is handy:
 
-Once the installer is open, type a plugin name, theme name, or author name in the search box and pick a result. Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
+- **Toolbar icon**: click the shopping-cart icon — it sits in the left ribbon on desktop and in the bottom toolbar on mobile.
+- **Command palette**: run “Open plugin / theme installer”.
+- **Settings page**: Obsidian → Settings → Third-party plugins → OpenPlug, then click **Open** under “Open plugin interface”.
+- **Community directory redirect (recommended)**: open a plugin or theme detail page on the [Obsidian Community Directory](https://community.obsidian.md/) and click **Add to Obsidian**; confirm the redirect in your browser and the installer opens automatically.
+
+### Installing a plugin or theme
+
+Type a plugin name, theme name, or author name in the search box and pick a result. Before installing, OpenPlug shows an info card (version / author / ID / compatibility) plus a translated description, and lets you pick a specific version. One click downloads, verifies, installs, and enables the item.
+
+### Updating plugins
+
+The installer home page automatically checks your installed official plugins for updates (stable versions only) and lists them one by one; click **Update** and restart Obsidian for the new version to take effect. Updates are always started by you, never automatic, and never change a plugin's enabled state.
 
 ## Features
 
@@ -46,6 +54,7 @@ Once the installer is open, type a plugin name, theme name, or author name in th
 | Multi-mirror acceleration | Races multiple domestic GitHub mirror nodes with a 30s timeout and SHA-256 cross-verification, auto-switching when a node fails |
 | Theme installation | Installs official themes through the same flow |
 | Desktop & mobile | Works on Windows / macOS / Linux and iOS / Android |
+| Plugin update checks | The home page lists updatable installed official plugins (stable versions only); updates run one by one, are manual only, and keep each plugin's enabled state |
 | Mirror latency test | One-click latency probe in settings for all built-in mirrors |
 
 ## Network usage & privacy disclosure
@@ -54,10 +63,10 @@ At runtime the plugin only makes the following HTTPS requests, all for **public*
 
 - Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
 - Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `wget.la` — used to download lists, manifests, and plugin files.
-- jsDelivr data API (`data.jsdelivr.com`): published version list for a plugin.
+- jsDelivr data API (`data.jsdelivr.com`): plugin version lists (version picker and update checks).
 - Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
 
-No user data is collected. No telemetry, no ads, no account required.
+No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
 ## Notes & limitations
 
@@ -68,7 +77,7 @@ No user data is collected. No telemetry, no ads, no account required.
 
 ## Compatibility
 
-- Minimum Obsidian version: `1.7.2`.
+- Minimum Obsidian version: `1.11.4`.
 - Desktop and mobile are both supported (`isDesktopOnly: false`).
 
 ## Development

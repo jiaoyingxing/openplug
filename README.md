@@ -17,9 +17,7 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click “Add to Obsidian” on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors. Full English version: [README-en.md](./README-en.md).
-
-OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件和主题：点击官方社区的 “Add to Obsidian”，OpenPlug 即经国内 GitHub 镜像加速完成下载、校验与安装。
+OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件和主题：点击官方社区的 “Add to Obsidian”，OpenPlug 即经国内 GitHub 镜像加速完成下载、校验与安装，无需任何手动操作。
 
 ## 安装
 
@@ -28,14 +26,22 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 
 ## 使用方式
 
-入口较多，任选其一：
+### 打开安装器
 
-1. **网页浏览时（推荐）**：[官方社区](https://community.obsidian.md/) 打开插件或主题详情页，点击 **Add to Obsidian**，浏览器唤起 Obsidian 后自动回到 OpenPlug 面板完成安装。
-2. **侧边栏购物车图标**：电脑上点击左侧边栏的购物车图标；手机上从屏幕左边缘向右滑出侧边栏，点击同样的图标。
-3. **命令面板**：执行「打开插件 / 主题安装器」命令。
-4. **插件设置页**：Obsidian → 设置 → 第三方插件 → OpenPlug，点击顶部「打开」按钮。
+任选其一：
 
-打开安装器后，在搜索框输入插件名、主题名或作者名，从结果中选择并安装。安装时会先展示插件信息卡（版本 / 作者 / ID / 兼容性）与简介译文，可自选安装版本；确认后一键下载、校验、安装并启用。
+- **工具栏图标**：点击购物车图标 —— 电脑上位于左侧工具栏，手机上位于主界面底部工具栏。
+- **命令面板**：执行「打开插件/主题安装器」。
+- **设置页**：设置 → 第三方插件 → OpenPlug，点击「打开插件界面」中的「打开」。
+- **官方社区跳转（推荐）**：在 [Obsidian 官方社区](https://community.obsidian.md/) 打开插件或主题详情页，点击 **Add to Obsidian**，在浏览器中同意跳转后自动打开安装器。
+
+### 安装插件或主题
+
+在搜索框输入插件名、主题名或作者名，从结果中选择；安装时会先展示插件信息卡（版本 / 作者 / ID / 兼容性）与简介译文，可自选安装版本；确认后一键下载、校验、安装并启用。
+
+### 更新插件
+
+安装器主页会自动检查本库已安装的官方插件更新（仅正式版本），逐条显示可更新项；点击「更新」完成安装后需重启 Obsidian 生效。更新需手动发起、不会自动更新，也不会改变插件原有的启用状态。
 
 ## 主要功能
 
@@ -48,6 +54,7 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 | 多镜像竞速加速 | 多个国内 GitHub 加速镜像并发竞速 + 30 秒超时 + 多镜像 SHA256 交叉校验，单个节点失效自动换源 |
 | 主题安装 | 与插件相同的路径安装官方主题 |
 | 电脑与手机 | Windows / macOS / Linux 与 iOS / Android 均可使用 |
+| 插件更新检测 | 主页自动列出本库已安装官方插件中可更新的项目（仅正式版本），逐条手动更新，不改变插件原有的启用状态 |
 | 镜像测速 | 设置页一键重新测速，直观了解各镜像当前延迟 |
 
 ## 网络使用与隐私披露
@@ -56,10 +63,10 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 
 - 官方清单：`community-plugins.json` 与 `community-css-themes.json`（用于搜索与跳转解析）。
 - 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`wget.la` —— 用于下载清单、manifest 与插件文件。
-- jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件历史版本列表。
+- jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件版本列表（历史版本下拉与更新检测）。
 - 翻译接口（仅发送**公开的插件描述文本**，用于侧栏简介的中英互译）：`uapis.cn`（主源）、`api.mymemory.translated.net`（兜底）。
 
-不收集任何用户数据，无遥测，无广告，无账号要求。
+不收集任何用户数据，无遥测，无广告，无账号要求。更新检测仅在本机将已安装插件与官方清单比对，不上传任何安装信息。
 
 ## 使用须知与限制
 
@@ -70,7 +77,7 @@ OpenPlug 让没有 VPN 的用户也能一键安装 Obsidian 官方社区插件�
 
 ## 兼容性
 
-- 最低 Obsidian 版本：`1.7.2`。
+- 最低 Obsidian 版本：`1.11.4`。
 - 桌面与移动端均支持（`isDesktopOnly: false`）。
 
 ## 开发
