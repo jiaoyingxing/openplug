@@ -19,11 +19,12 @@
 .openplug-banner {
 	position: relative;
 	overflow: hidden;
-	/* 并发操作各占一行（2026-08-30 用户要求并列显示） */
+	/* 并发操作各占一行、互不覆盖；底壳保留官方设置组表面（见下方共用
+	   选择器）。2026-08-31 用户要求：去掉的是套在行上的绿/红色块（第二
+	   层），行间改用分隔线（见下方相邻兄弟规则，单行无分隔线）。 */
 	display: flex;
 	flex-direction: column;
 	align-items: stretch;
-	gap: var(--size-2-1);
 	margin: var(--size-4-2) 0 0;
 	padding: var(--size-4-2);
 	font-size: var(--font-ui-small);
@@ -34,31 +35,27 @@
 	display: none;
 }
 
-/* 状态行：成功/失败用官方浅色底芯片（rgba(rgb 变量, 0.2)，与官方
-   diff 视图同款模式；主题联动）；加载行透明仅文字 muted，活动反馈由
-   壳体上的官方加载条承担（见下）。 */
+/* 状态行：纯文本；行上的绿/红色块已去掉（2026-08-31 用户要求——去掉
+   套在底壳上的第二层色块，浅灰底壳保留）；多行之间用分隔线（相邻兄弟
+   选择器，单行无分隔线）。加载行文字 muted，活动反馈由壳体上的官方
+   加载条承担（见下）。 */
 .openplug-banner-line {
-	padding: var(--size-4-1) var(--size-4-2);
-	border-radius: var(--radius-s);
+	padding: var(--size-4-1) 0;
+}
+
+.openplug-banner-line + .openplug-banner-line {
+	border-top: var(--border-width) solid var(--background-modifier-border);
 }
 
 .openplug-banner-line.is-loading {
 	color: var(--text-muted);
 }
 
-.openplug-banner-line.is-success {
-	background-color: rgba(var(--background-modifier-success-rgb), 0.2);
-}
-
-.openplug-banner-line.is-error {
-	background-color: rgba(var(--background-modifier-error-rgb), 0.2);
-}
-
 /* 加载动效直接用官方元素：核心裸选择器 .is-loading:before（顶部 3px
    accent 呼吸条 + progress-bar 动画）在壳体有 is-loading 时自然生效，
-   主题联动、无需自绘（2026-08-30 用户要求：不再自造彗星线）。
+   主题联动、无需自绘。
    行级仍需显式压制核心裸选择器——状态行也带 is-loading 类，否则每行
-   都会各自长出一条加载条（用户要求顶部只留一条总的）。 */
+   都会各自长出一条加载条（只留一条总的）。 */
 .openplug-banner-line.is-loading::before {
 	display: none;
 }
@@ -256,7 +253,8 @@
    minAppVersion 已覆盖）：主题覆写这些变量时这些板块与设置页卡片同步
    换肤，不再自绘灰底。默认亮色下取 --background-primary-alt（#fafafa，
    比 --background-secondary #f6f6f6 更浅）；圆角 --setting-items-radius =
-   --radius-l（12px），比原 --radius-m（8px）更圆润。 */
+   --radius-l（12px），比原 --radius-m（8px）更圆润。顶部状态框保留该
+   表面作底壳（2026-08-31 用户要求：去掉的是套在行上的绿/红色块）。 */
 .openplug-infocard,
 .openplug-actions,
 .openplug-home-card,

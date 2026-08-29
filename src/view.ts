@@ -476,6 +476,13 @@ export class OpenplugPickerView extends ItemView {
 	 */
 	private async checkAndRenderUpdates(section: HTMLElement): Promise<void> {
 		const seq = ++this.updatesSeq;
+		// 先落「检查中」状态行：官方清单加载可能较慢，避免板块空白
+		// （2026-08-31 用户要求：无内容时区块不得只剩空壳）。
+		section.empty();
+		section.createDiv({
+			cls: "openplug-updates-status",
+			text: "正在检查插件更新…",
+		});
 		if (!this.listCache || !this.themeListCache) {
 			await this.ensureLists();
 		}
@@ -491,12 +498,6 @@ export class OpenplugPickerView extends ItemView {
 		if (seq !== this.updatesSeq) {
 			return;
 		}
-
-		section.empty();
-		section.createDiv({
-			cls: "openplug-updates-status",
-			text: "正在检查插件更新…",
-		});
 
 		const byId = new Map(this.listCache.map((e) => [e.id, e] as const));
 		const candidates = installed.filter((i) => byId.has(i.id));
@@ -592,8 +593,9 @@ export class OpenplugPickerView extends ItemView {
 		return result;
 	}
 
-	/** 渲染检测结果：有更新 → 逐行（名称/作者/版本 + 更新按钮）；全最新或
-	 * 单项失败 → 静默状态行。标题在壳外（renderEmptyState 创建，不在卡内）。 */
+	/** 渲染检测结果：有更新 → 逐行（名称/作者/版本 + 更新按钮）；
+	 * 无更新 → 「目前没有需要更新的插件。」；单项失败 → 失败统计行。
+	 * 标题在壳外（renderEmptyState 创建，不在卡内）。 */
 	private renderUpdatesResult(
 		section: HTMLElement,
 		updates: PluginUpdateEntry[],
@@ -605,7 +607,7 @@ export class OpenplugPickerView extends ItemView {
 				cls: "openplug-updates-status",
 				text:
 					failedCount === 0
-						? "已检查：所有官方插件均为最新。"
+						? "目前没有需要更新的插件。"
 						: `检查不完整：${failedCount} 个插件检查失败，已跳过。`,
 			});
 			return;
@@ -697,7 +699,22 @@ export class OpenplugPickerView extends ItemView {
 				`更新完成：${u.name} 已安装 ${u.latestVersion}，重启 Obsidian 后生效。`,
 				"is-success",
 			);
+			// 行成功即移除；若这是最后一行且板块内已无任何提示行，补「无
+			// 更新」占位，避免板块只剩空壳（2026-08-31 用户要求）。
+			// 注意：先取板块引用再移除行——remove() 后按钮已脱离文档，
+			// closest() 会返回 null（2026-08-31 实测抓到的顺序 bug）。
+			const updatesSection = btn.closest(".openplug-updates");
 			btn.closest(".openplug-update-row")?.remove();
+			if (
+				updatesSection &&
+				!updatesSection.querySelector(".openplug-update-row") &&
+				!updatesSection.querySelector(".openplug-updates-status")
+			) {
+				updatesSection.createDiv({
+					cls: "openplug-updates-status",
+					text: "目前没有需要更新的插件。",
+				});
+			}
 		} catch (e) {
 			line.update(`更新失败：${String(e)}`, "is-error");
 			btn.disabled = false;

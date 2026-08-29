@@ -1,6 +1,6 @@
 {
   "name": "openplug",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Install official Obsidian community plugins via domestic mirror acceleration, without a VPN.",
   "main": "main.js",
   "scripts": {
