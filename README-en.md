@@ -17,7 +17,7 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click: click **Add to Obsidian** on the community directory and OpenPlug handles the download, verification, and installation through accelerated domestic GitHub mirrors — no manual steps required.
+OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click.
 
 ## Installation
 
@@ -49,7 +49,7 @@ The installer home page automatically checks your installed official plugins for
 | --- | --- |
 | Protocol interception | Captures the official `Add to Obsidian` redirect (plugins and themes) and completes the install chain under restricted networks |
 | Official directory search | Searches the official plugin / theme list by name, author, or ID, with a Chinese UI |
-| Info card & translation | Shows version, author, ID, and compatibility; auto-translates plugin descriptions (falls back to the original text without blocking) |
+| Info card & translation | Shows version, author, ID, and compatibility; auto-translates plugin descriptions into Chinese (falls back to the original text without blocking) |
 | Version selection | Lists published versions and installs the latest by default; older versions can be picked |
 | Multi-mirror acceleration | Races multiple domestic GitHub mirror nodes with a 30s timeout and SHA-256 cross-verification, auto-switching when a node fails |
 | Theme installation | Installs official themes through the same flow |
@@ -64,7 +64,7 @@ At runtime the plugin only makes the following HTTPS requests, all for **public*
 - Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
 - Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `wget.la` — used to download lists, manifests, and plugin files.
 - jsDelivr data API (`data.jsdelivr.com`): plugin version lists (version picker and update checks).
-- Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
+- Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description into Chinese): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
 
 No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
