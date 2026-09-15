@@ -216,12 +216,16 @@
 	flex: 0 0 auto;
 }
 
-.openplug-empty a {
+/* 链接配色：宿主不给设置页 desc 内的裸 <a> 上链接色，与主页空态锚点
+   共用同一规则（设置容器两条渲染路径都挂 openplug-settings-tab）。 */
+.openplug-empty a,
+.openplug-settings-tab .setting-item-description a {
 	color: var(--text-accent);
 	text-decoration: none;
 }
 
-.openplug-empty a:hover {
+.openplug-empty a:hover,
+.openplug-settings-tab .setting-item-description a:hover {
 	text-decoration: underline;
 	cursor: pointer;
 }
@@ -384,8 +388,11 @@
 
 /* 桥接管窗口内隐藏官方社区详情弹层（main.ts suppressOfficialSheet）：
    抑制类在 appUrlOpen 同一同步派发批次内加入，官方 sheet 从未被绘制；
-   接管结束（关闭成功或 2s 兜底）后移除，不影响其他弹窗。 */
+   接管结束（关闭成功或 2s 兜底）后移除，不影响其他弹窗。
+   不用 !important（2026-08-31 商店检查器提示）：运行时取证官方
+   `.modal-container` 仅 CSS display:flex（特异性 0,1,0）、显隐为 DOM
+   挂载/摘除、无行内样式对抗；本规则特异性（0,2,1）稳压。 */
 body.openplug-hide-modals .modal-container,
 body.openplug-hide-modals .modal-bg {
-	display: none !important;
+	display: none;
 }

@@ -1,7 +1,8 @@
-import { ItemView, Platform, setIcon } from "obsidian";
+import { ItemView, setIcon } from "obsidian";
 
 import { VIEW_TYPE_PICKER } from "./consts";
 import { translateText } from "./translate";
+import { openExternal } from "./util";
 import {
 	fetchLatestStableVersion,
 	fetchPluginInfo,
@@ -103,12 +104,8 @@ export class OpenplugPickerView extends ItemView {
 		if (!el) {
 			return { update: () => {}, close: () => {} };
 		}
-		// 新开操作：清掉已完结（成功/失败）的历史行，避免壳体堆积
-		for (const child of Array.from(el.children)) {
-			if (!child.classList.contains("is-loading")) {
-				child.remove();
-			}
-		}
+		// 新开操作：清掉已完结历史行（进行中的并发行原样保留）
+		this.bannerSweepFinished();
 		const line = el.createDiv({ cls: "openplug-banner-line is-loading" });
 		el.classList.remove("is-hidden");
 		let closed = false;
@@ -150,13 +147,19 @@ export class OpenplugPickerView extends ItemView {
 		el.classList.toggle("is-hidden", children.length === 0);
 	}
 
-	/** 清空全部状态行（如关闭详情返回首页）。 */
-	private bannerClear(): void {
+	/** 清掉已完结（成功/失败）的历史行，避免壳体堆积；加载中的行保留——
+	 * 返回首页只是离开当前视图，不得切断进行中任务的可见状态（2026-09-15
+	 * 用户反馈：关闭详情/重新搜索不等于结束下载任务）。 */
+	private bannerSweepFinished(): void {
 		const el = this.bannerEl;
 		if (!el) {
 			return;
 		}
-		el.empty();
+		for (const child of Array.from(el.children)) {
+			if (!child.classList.contains("is-loading")) {
+				child.remove();
+			}
+		}
 		this.recomputeBanner();
 	}
 
@@ -192,7 +195,7 @@ export class OpenplugPickerView extends ItemView {
 				});
 				a.addEventListener("click", (e) => {
 					e.preventDefault();
-					this.openExternal("https://community.obsidian.md/");
+					openExternal("https://community.obsidian.md/");
 				});
 				li.append("，筛选并找到你需要的插件或主题");
 			} else {
@@ -204,22 +207,6 @@ export class OpenplugPickerView extends ItemView {
 		wrap.createDiv({ cls: "openplug-heading", text: "插件更新" });
 		const updatesEl = wrap.createDiv({ cls: "openplug-updates" });
 		void this.checkAndRenderUpdates(updatesEl);
-	}
-
-	private openExternal(url: string): void {
-		if (Platform.isMobile) {
-			window.open(url, "_blank");
-			return;
-		}
-		// 桌面：经 electron 直接打开系统浏览器，绕过 Obsidian 的 window-open
-		// 拦截——启用「网页浏览器」核心插件（webviewer）时 window.open 会被
-		// 转入应用内浏览器，内部浏览器无法触发 obsidian:// 深度链接回跳
-		// （75555f8 的原设计意图；v1.1「统一 window.open」在无 webviewer 的
-		// 环境误判该行为，见开发日志 20260828-2045 追加六/七）。
-		// require 仅在此分支执行：移动端永不走到，无加载期 electron 依赖；
-		// 不能用动态 import()（CJS 产物中无法解析，桌面实测无反应）。
-		const { shell } = require("electron") as typeof import("electron");
-		void shell.openExternal(url);
 	}
 
 	private async ensureLists(): Promise<void> {
@@ -462,7 +449,9 @@ export class OpenplugPickerView extends ItemView {
 			if (this.searchEl) {
 				this.searchEl.value = "";
 			}
-			this.bannerClear();
+			// 只清完结行：进行中的下载/更新行保留在顶部，任务与可见进度
+			// 均不因返回首页中断
+			this.bannerSweepFinished();
 			if (this.bodyEl) {
 				this.renderEmptyState(this.bodyEl);
 			}
