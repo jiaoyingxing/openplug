@@ -274,6 +274,25 @@
 		var(--setting-items-border-color, var(--background-modifier-border));
 }
 
+/* 安卓专属底色兼容（2026-09-18 用户裁定：回退 .is-mobile 全移动端方案，
+   只对安卓做兼容，其余设备路径与改色前一致）。宿主 CSS 无安卓类，由
+   main.ts 以 Platform.isAndroidApp 挂 body.openplug-android 后本规则才
+   可能命中。背景：安卓亮色下宿主 .is-mobile 把 --setting-items-background
+   重定义为页面主背景，卡片与页面同色而消失（resojot 20260814 同根因），
+   此处回指桌面默认值恢复可见；深色不覆写——移动深色色阶被宿主重映射
+   （#000 页 / #111 面），primary-alt 近乎隐形，宿主 --background-secondary
+   即正常观感。 */
+body.openplug-android:not(.theme-dark) .openplug-infocard,
+body.openplug-android:not(.theme-dark) .openplug-actions,
+body.openplug-android:not(.theme-dark) .openplug-home-card,
+body.openplug-android:not(.theme-dark) .openplug-updates,
+body.openplug-android:not(.theme-dark) .openplug-banner {
+	--setting-items-background: var(
+		--background-primary-alt,
+		var(--background-secondary)
+	);
+}
+
 /* 主页顶部：使用方式整体卡（含注句，注句不垫页底） */
 .openplug-home-card {
 	padding: var(--size-4-3);

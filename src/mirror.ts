@@ -284,7 +284,7 @@ export interface InstalledPluginCheck {
 	version: string;
 }
 
-/** 检测出的可更新项：官方清单内插件 + 最新稳定版 ≠ 本地版本。 */
+/** 检测出的可更新项：官方清单内插件 + 最新稳定版数字版本高于本机版本。 */
 export interface PluginUpdateEntry {
 	id: string;
 	name: string;
@@ -295,18 +295,56 @@ export interface PluginUpdateEntry {
 }
 
 /** 稳定版标签：纯数字点分段。jsDelivr 版本列表按 tag 时间倒序且含预发布
- * （实测 excalidraw 首项是 2.27.0-beta.8），更新提示不能拿首项当最新。 */
+ * （实测 excalidraw 首项是 2.27.0-beta.8），稳定版判定不能放行预发布。 */
 function isStableVersion(v: string): boolean {
 	return /^\d+(\.\d+)+$/.test(v);
 }
 
-/** 官方插件最新稳定发布版（无则 null）。jsDelivr 数据 API 直连，不走公益
- * 镜像、不受其共享限流；与版本下拉同一数据源（DECISIONS 镜像策略）。 */
+/** 数字版本比较：剥离预发布/构建后缀后逐段数值比、缺段补零；a 高于 b
+ * 返回正数、相等 0、低于返回负数，任一侧剥完仍有非数字段则 null。与宿主
+ * 更新判定同口径（官方只认 x.y.z，预发布后缀不参与大小；论坛主题 87229），
+ * 2.27.0-beta.8 与 2.27.0 由此相等、互不推荐。 */
+export function compareNumericVersions(a: string, b: string): number | null {
+	const core = (v: string): number[] | null => {
+		const parts = v.split(/[-+]/)[0].split(".");
+		if (!parts.every((p) => /^\d+$/.test(p))) {
+			return null;
+		}
+		return parts.map(Number);
+	};
+	const pa = core(a);
+	const pb = core(b);
+	if (!pa || !pb) {
+		return null;
+	}
+	const len = Math.max(pa.length, pb.length);
+	for (let i = 0; i < len; i += 1) {
+		const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+		if (diff !== 0) {
+			return diff > 0 ? 1 : -1;
+		}
+	}
+	return 0;
+}
+
+/** 官方插件最新稳定发布版（无则 null）：200 条内取数值最高的稳定标签。
+ * 列表按 tag 时间倒序但不承诺语义序（上游先发 1.2.0 后补打 1.1.5 热修
+ * tag 时首项更低），不做首项假设。jsDelivr 数据 API 直连，不走公益镜像、
+ * 不受其共享限流；与版本下拉同一数据源（DECISIONS 镜像策略）。 */
 export async function fetchLatestStableVersion(
 	repo: string,
 ): Promise<string | null> {
 	const versions = await fetchVersions(repo, 200);
-	return versions.find(isStableVersion) ?? null;
+	let latest: string | null = null;
+	for (const v of versions) {
+		if (
+			isStableVersion(v) &&
+			(latest === null || (compareNumericVersions(v, latest) ?? 0) > 0)
+		) {
+			latest = v;
+		}
+	}
+	return latest;
 }
 
 async function sha256(buf: ArrayBuffer): Promise<string> {
@@ -397,6 +435,28 @@ export async function installPlugin(
 
 	if (!(await app.vault.adapter.exists(`${dir}/manifest.json`))) {
 		await app.vault.adapter.write(`${dir}/manifest.json`, info.rawManifest);
+	}
+
+	// 上游发布包内 manifest 的 version 可能滞后于 release tag（如 dataview
+	// 0.5.70 资产仍标注 0.5.68，2026-08-31 取证；宿主与本插件均按 manifest
+	// 判定已安装版本），导致永久显示旧版本并反复提示可更新。落盘后把
+	// version 对齐请求版本，其余字段保持官方资产原样。
+	const manifestPath = `${dir}/manifest.json`;
+	if (await app.vault.adapter.exists(manifestPath)) {
+		try {
+			const man = JSON.parse(await app.vault.adapter.read(manifestPath)) as {
+				version?: string;
+			};
+			if (man.version !== version) {
+				man.version = version;
+				await app.vault.adapter.write(
+					manifestPath,
+					JSON.stringify(man, null, "\t"),
+				);
+			}
+		} catch {
+			// manifest 不可解析时保持原样，不做兜底改写
+		}
 	}
 
 	const plugins = (

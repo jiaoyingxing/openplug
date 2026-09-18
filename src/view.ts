@@ -4,6 +4,7 @@ import { VIEW_TYPE_PICKER } from "./consts";
 import { translateText } from "./translate";
 import { openExternal } from "./util";
 import {
+	compareNumericVersions,
 	fetchLatestStableVersion,
 	fetchPluginInfo,
 	fetchPluginList,
@@ -543,7 +544,12 @@ export class OpenplugPickerView extends ItemView {
 				this.updateLatestCache.set(installed.id, { latest, at: now });
 			}
 		}
-		if (latest && latest !== installed.version) {
+		// 数字更高才提示：≠ 会把本机更高（预发布装机/BRAT/上游 tag 时序）
+		// 也推成更新，即推荐降级；解析失败视为无更新（宁漏不降级）。
+		if (
+			latest &&
+			(compareNumericVersions(latest, installed.version) ?? 0) > 0
+		) {
 			return {
 				id: installed.id,
 				name: entry.name,
