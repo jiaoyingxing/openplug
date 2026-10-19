@@ -21,7 +21,7 @@
   </a>
 </p>
 
-Official Obsidian community plugins and themes can be installed with one click, even without a VPN.
+Even without a VPN, you can install official Obsidian community plugins and themes with one click.
 
 OpenPlug takes over the official “Add to Obsidian” redirects and completes search, version selection, and verified installation from the official directories, with a Chinese info card and translated descriptions, plus update checks for installed official plugins.
 
