@@ -1,6 +1,4 @@
-# OpenPlug — One-Click Plugin Freedom Without a VPN
-
-> [简体中文](./README.md) · **English**
+# OpenPlug
 
 <p align="center">
   <a href="https://github.com/jiaoyingxing/openplug/releases">
@@ -8,6 +6,12 @@
   </a>
   <a href="https://github.com/jiaoyingxing/openplug/releases">
     <img alt="Latest release" src="https://img.shields.io/github/v/release/jiaoyingxing/openplug?style=flat-square&label=Latest%20release" />
+  </a>
+  <a href="https://community.obsidian.md/plugins/openplug">
+    <img alt="Obsidian Plugin" src="https://img.shields.io/badge/Obsidian-Plugin-7c3aed?style=flat-square" />
+  </a>
+  <a href="./LICENSE">
+    <img alt="License" src="https://img.shields.io/github/license/jiaoyingxing/openplug?style=flat-square" />
   </a>
   <a href="./README.md">
     <img alt="CN 中文版" src="https://img.shields.io/badge/CN-%E4%B8%AD%E6%96%87%E7%89%88-d32f2f?style=flat-square" />
@@ -17,14 +21,16 @@
   </a>
 </p>
 
-OpenPlug lets users without a VPN install official Obsidian community plugins and themes with one click.
+Official Obsidian community plugins and themes can be installed with one click, even without a VPN.
 
-## 1 Installation
+OpenPlug takes over the official “Add to Obsidian” redirects and completes search, version selection, and verified installation from the official directories, with a Chinese info card and translated descriptions, plus update checks for installed official plugins.
+
+## 1. Installation
 
 1. **Community directory (recommended)**: Obsidian → Settings → Third-party plugins → turn off Safe mode → Browse community plugins → search **OpenPlug** → Install and enable.
 2. **Manual installation**: download `main.js`, `manifest.json`, and `styles.css` from [GitHub Releases](https://github.com/jiaoyingxing/openplug/releases), place them in `.obsidian/plugins/openplug/` inside your vault (the same path under the app data folder on mobile), restart Obsidian, and enable the plugin in the community plugins list. The BRAT plugin can also track prerelease builds from `jiaoyingxing/openplug`.
 
-## 2 How to use
+## 2. How to use
 
 ### 2.1 Opening the installer
 
@@ -43,7 +49,7 @@ Type a plugin name, theme name, or author name in the search box and pick a resu
 
 The installer home page automatically checks your installed official plugins for updates (stable versions only) and lists them one by one; click **Update** and restart Obsidian for the new version to take effect. Updates are always started by you, never automatic, and never change a plugin's enabled state.
 
-## 3 Features
+## 3. Features
 
 | Feature | Description |
 | --- | --- |
@@ -57,7 +63,7 @@ The installer home page automatically checks your installed official plugins for
 | Plugin update checks | The home page lists updatable installed official plugins (stable versions only); updates run one by one, are manual only, and keep each plugin's enabled state |
 | Mirror latency test | One-click latency probe in settings for all built-in mirrors |
 
-## 4 Network usage & privacy disclosure
+## 4. Network usage & privacy disclosure
 
 At runtime the plugin only makes the following HTTPS requests, all for **public** data:
 
@@ -68,25 +74,20 @@ At runtime the plugin only makes the following HTTPS requests, all for **public*
 
 No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
-## 5 Notes & limitations
+## 5. Notes & limitations
 
 - OpenPlug is not an official Obsidian feature — it is a helper for the installation channel only. Plugin / theme content is provided by their respective authors; verify source and permissions yourself.
 - Only plugins and themes **already listed in the official community directory** are supported (plugins not in the official list can be installed via [BRAT](https://github.com/TfTHacker/obsidian42-brat)).
 - Mirror nodes are free public services; availability and speed fluctuate with network conditions. If all nodes fail, re-run the latency test in settings and retry.
 - Licensing: this plugin is open source under the [MIT License](./LICENSE). Third-party plugins / themes you install follow their own licenses.
 
-## 6 Compatibility
+## 6. Compatibility
 
 - Minimum Obsidian version: `1.11.4`.
 - Desktop and mobile are both supported (`isDesktopOnly: false`).
 
-## 7 Development
+## 7. License and support
 
-```powershell
-npm run lint          # ESLint (obsidianmd recommended rules)
-npm run build         # typecheck + production build (output: dist/release)
-```
-
-The source is TypeScript and depends only on the Obsidian API and Web APIs (`crypto.subtle` for SHA-256 verification; no Node API). The bundle is produced with esbuild.
-
-Issues or PRs are welcome. License: [LICENSE](./LICENSE).
+- OpenPlug is open source under the [MIT License](./LICENSE).
+- Bugs and suggestions: [GitHub Issues](https://github.com/jiaoyingxing/openplug/issues); PRs welcome.
+- Community and product updates: search Xiaohongshu for **焦应行** 🔍
