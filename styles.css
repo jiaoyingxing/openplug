@@ -415,3 +415,81 @@ body.openplug-hide-modals .modal-container,
 body.openplug-hide-modals .modal-bg {
 	display: none;
 }
+
+/* 设置窗左栏：宿主对第三方插件整栏隐藏页签图标（asar 规则原文
+   `.vertical-tab-header-group-items[data-section="community-plugins"]
+   .vertical-tab-nav-item-icon{display:none}`）。只放开本插件自己那一行（按
+   页签 id openplug），其余插件行保持宿主的纯文字形态；本规则 specificity
+   高于宿主隐藏规则，不需要 !important。宿主改版 ⇒ 回到纯文字。 */
+.vertical-tab-header-group-items[data-section="community-plugins"] .vertical-tab-nav-item[data-setting-id="openplug"] .vertical-tab-nav-item-icon {
+	display: flex;
+}
+
+/* 1.13+ 根级导航行行首图标（声明式 schema 无 icon 字段，由
+   src/settings-root-icons.ts 按「行名＝页名」补挂）：尺寸/颜色对齐宿主图标
+   习惯（--icon-s ＋ --text-muted）。间距写法与 Resojot / EasySync 同形：
+   基础 8px ＋ 手机端 4px。 */
+body.is-phone .openplug-settings-root-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	color: var(--text-muted);
+	margin-inline-end: var(--size-4-1);
+}
+
+/* 手机端收一档到 4px。**body.is-phone 前缀是承重的**：宿主有一条
+   `.setting-item > *:first-child { margin-inline-end: var(--size-4-4) }`
+   （asar 原文，specificity (0,2,0)）给每行首个子元素统一派边距，任何单类
+   间距规则都被它压掉（桌面 computed 即宿主值；EasySync / Resojot 同况实测）；
+   带上前缀后本条为 (0,2,1)，压过宿主条，手机端才能收到 4px。宿主改版 ⇒
+   规则失效 ⇒ 退宿主默认间距，纯呈现层，功能不受影响。 */
+.openplug-settings-root-icon {
+	margin-inline-end: var(--size-4-2);
+}
+
+.openplug-settings-root-icon svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* 「关于-作者」行联系方式钮（EasySync 同型照抄，2026-10-17 用户拍板）：
+   图标＋短标签一体化小按钮；小红书图标保留品牌红。 */
+.openplug-settings-about-contact-setting .setting-item-control {
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	line-height: 1;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button .openplug-settings-about-contact-button-icon,
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button .openplug-settings-about-contact-button-label {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button .openplug-settings-about-contact-button-icon {
+	flex: 0 0 auto;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button .openplug-settings-about-contact-button-label {
+	line-height: 1;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button svg {
+	display: block;
+	width: 16px;
+	height: 16px;
+}
+
+.openplug-settings-about-contact-setting .setting-item-control > .openplug-settings-about-contact-button--xiaohongshu svg {
+	color: #e62e43;
+}

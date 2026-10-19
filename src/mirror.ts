@@ -265,16 +265,30 @@ export async function probeMirrorsHealth(): Promise<MirrorProbe[]> {
 	);
 }
 
+/** jsDelivr 版本列表（按 tag 时间倒序、含预发布）。官方已弃用单数端点
+ * v1/package/gh（响应头 Deprecation: 2023-01-01，successor-version 指向
+ * v1/packages/gh），故用复数端点；条目为 {version,...} 对象数组，缺
+ * version 的畸形条目过滤而非崩溃。 */
 export async function fetchVersions(repo: string, maxVersions = 15): Promise<string[]> {
 	const res = await withTimeout(
-		requestUrl({ url: `https://data.jsdelivr.com/v1/package/gh/${repo}` }),
+		requestUrl({ url: `https://data.jsdelivr.com/v1/packages/gh/${repo}` }),
 		REQUEST_TIMEOUT_MS,
 	);
 	if (res.status >= 300) {
 		throw new Error(`HTTP ${res.status}`);
 	}
-	const data = JSON.parse(res.text) as { versions?: string[] };
-	const versions = Array.isArray(data.versions) ? data.versions : [];
+	const data = JSON.parse(res.text) as { versions?: unknown };
+	const entries: unknown[] = Array.isArray(data.versions) ? data.versions : [];
+	const versions: string[] = [];
+	for (const entry of entries) {
+		if (
+			typeof entry === "object" &&
+			entry !== null &&
+			typeof (entry as { version?: unknown }).version === "string"
+		) {
+			versions.push((entry as { version: string }).version);
+		}
+	}
 	return versions.slice(0, maxVersions);
 }
 

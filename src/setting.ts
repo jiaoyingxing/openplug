@@ -1,13 +1,20 @@
 import {
 	App,
+	ButtonComponent,
 	PluginSettingTab,
 	Setting,
 	SettingDefinitionItem,
 	SettingGroup,
+	setIcon,
 } from "obsidian";
 
 import type OpenplugPlugin from "./main";
 import { MIRRORS, probeMirrorsHealth } from "./mirror";
+import {
+	SETTINGS_ROOT_PAGE,
+	SETTINGS_TAB_ICON,
+	decorateSettingsRootRowIcons,
+} from "./settings-root-icons";
 import { openExternal } from "./util";
 
 /** 作者 GitHub 仓库（与 README / Release 地址一致）。 */
@@ -16,6 +23,37 @@ const GITHUB_URL = "https://github.com/jiaoyingxing/openplug";
 const XIAOHONGSHU_URL = "https://xhslink.com/m/57v8xzlVMKp";
 /** BRAT 在官方社区目录的详情页深度链接（由宿主协议接管打开）。 */
 const BRAT_URL = "obsidian://show-plugin?id=obsidian42-brat";
+
+/** 「关于-作者」行的联系方式按钮（EasySync 同型照抄，2026-10-17 用户拍板）：
+ *  图标＋短标签一体化小按钮，按钮原生空内容后自行挂 icon/label 两 span。 */
+function configureAboutContactButton(
+	button: ButtonComponent,
+	options: {
+		label: string;
+		icon: string;
+		url: string;
+		extraClassName?: string;
+	},
+): void {
+	button.setClass("openplug-settings-about-contact-button");
+	button.setTooltip(options.label);
+	button.buttonEl.setAttribute("aria-label", options.label);
+	button.onClick(() => {
+		window.open(options.url, "_blank", "noopener,noreferrer");
+	});
+	button.buttonEl.empty();
+	if (options.extraClassName) {
+		button.buttonEl.addClass(options.extraClassName);
+	}
+	const iconEl = button.buttonEl.createSpan({
+		cls: "openplug-settings-about-contact-button-icon",
+	});
+	setIcon(iconEl, options.icon);
+	button.buttonEl.createSpan({
+		cls: "openplug-settings-about-contact-button-label",
+		text: options.label,
+	});
+}
 
 /**
  * 设置页。Obsidian ≥1.13 走声明式 getSettingDefinitions（设置可被设置搜索
@@ -32,10 +70,55 @@ export class OpenplugSettingTab extends PluginSettingTab {
 	private probeRows: Setting[] = [];
 	/** 自动测速触发标记：每次打开设置页重新武装，首渲染即启动一次。 */
 	private probeStarted = false;
+	/** 根级导航行行首图标补挂观察器（1.13+ 声明式；unload 时由 plugin.register 断开）。 */
+	private rootRowIconObserver: MutationObserver | null = null;
 
 	constructor(app: App, plugin: OpenplugPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+		// 设置窗左栏页签图标：宿主默认隐藏第三方插件行的图标元素，由 styles.css
+		// 按 data-setting-id 只放开本插件那一行（做法与姊妹插件 EasySync / Resojot 同源）。
+		this.icon = SETTINGS_TAB_ICON;
+		this.observeRootRowIcons();
+	}
+
+	/**
+	 * 1.13+ 根级导航行的行首图标补挂。
+	 *
+	 * 宿主进子页再返回会重建根行、`update()` 不重建（EasySync 1.14.4 实测），
+	 * 所以盯 `containerEl` 的 DOM 变化同步补挂；**不用 rAF 合帧**——设置窗在前台
+	 * 时主窗 `document.hidden === true`，rAF 实测不触发。装饰只遍历容器内的
+	 * `.setting-item`（根级 ≤4 行）且幂等，成本可忽略。
+	 */
+	private observeRootRowIcons(): void {
+		this.rootRowIconObserver = new MutationObserver(() => {
+			this.decorateRootRowIcons();
+		});
+		this.rootRowIconObserver.observe(this.containerEl, {
+			attributes: false,
+			childList: true,
+			characterData: false,
+			subtree: true,
+		});
+		this.plugin.register(() => {
+			this.rootRowIconObserver?.disconnect();
+			this.rootRowIconObserver = null;
+		});
+	}
+
+	/**
+	 * `<1.13` 的 `display()` 形态没有根级导航行（行名与页名同名的行在那里是
+	 * 普通设置行），只在声明式渲染（1.13+）才装饰。
+	 */
+	private decorateRootRowIcons(): void {
+		const declarative = this as unknown as { settingItems?: unknown[] };
+		if (
+			declarative.settingItems === undefined
+			|| declarative.settingItems.length === 0
+		) {
+			return;
+		}
+		decorateSettingsRootRowIcons(this.containerEl);
 	}
 
 	/**
@@ -50,69 +133,93 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		// 重新武装自动测速：声明式路径在最后一镜像行渲染时触发（见
 		// renderMirrorRow），与回落路径 display() 末尾触发行为一致。
 		this.probeStarted = false;
+		// 根级＝两组（2026-10-17 用户拍板修订）：「打开插件界面」单独一组，三个
+		// 子页一组；EasySync 2026-10-11 同型无标题轻分组。页内沿用各组原行序与
+		// 文案直接平移（EasySync 维护页同型：页内裸行），页名承接原组标题语义，
+		// 页内不再重复组标题。
 		return [
 			{
-				name: "打开插件界面",
-				desc: "搜索并安装社区插件与主题。",
-				render: (setting) => this.renderOpenRow(setting),
-			},
-			{
 				type: "group",
-				heading: "关于",
 				items: [
 					{
-						name: "产品",
-						desc: `OpenPlug ${this.plugin.manifest.version?.trim() || ""}`,
-					},
-					{
-						name: "作者",
-						desc: "焦应行（Jiao Yingxing）。使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
-						render: (setting) => this.renderAuthorRow(setting),
+						name: "打开插件界面",
+						desc: "搜索并安装社区插件与主题。",
+						render: (setting) => this.renderOpenRow(setting),
 					},
 				],
 			},
 			{
 				type: "group",
-				heading: "使用须知",
 				items: [
 					{
-						name: "隐私",
-						desc: "本插件开源，不收集你的数据，无遥测，无广告，不设账号。",
+						type: "page",
+						name: SETTINGS_ROOT_PAGE.about,
+						desc: "产品、作者与问题反馈。",
+						items: [
+							// EasySync 关于页三行同型照抄（2026-10-17 用户拍板）：
+							// 产品名＋版本行、作者行（GitHub／小红书图标钮）、问题反馈行。
+							{
+								name: "OpenPlug",
+								desc: `版本 ${this.plugin.manifest.version?.trim() || ""}`,
+							},
+							{
+								name: "作者",
+								desc: "焦应行（Jiao Yingxing）",
+								render: (setting) => this.renderAuthorRow(setting),
+							},
+							{
+								name: "问题反馈",
+								desc: "使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
+							},
+						],
 					},
 					{
-						name: "来源",
-						desc: "所列的全部插件与主题均通过第三方 GitHub 镜像站点获取。",
+						type: "page",
+						name: SETTINGS_ROOT_PAGE.notice,
+						desc: "隐私、来源、下载与风险提示。",
+						items: [
+							{
+								name: "隐私",
+								desc: "本插件开源，不收集你的数据，无遥测，无广告，不设账号。",
+							},
+							{
+								name: "来源",
+								desc: "所列的全部插件与主题均通过第三方 GitHub 镜像站点获取。",
+							},
+							{
+								name: "下载",
+								desc: "仅支持官方社区已上架的插件与主题。未上架的插件需用 BRAT 下载。（我做了汉化，已被作者合并）",
+								render: (setting) => this.renderDownloadRow(setting),
+							},
+							{
+								name: "风险提示",
+								desc: "插件上架前虽然会有官方自动审核，但多数插件为个人开发者维护，无法确保质量。建议优先选用下载量大、长期稳定维护的插件。",
+							},
+							{
+								name: "免责声明",
+								desc: "下载与安装即代表你已知悉并自行承担由此带来的全部风险（包括但不限于数据丢失、设备安全、隐私泄露等）。",
+							},
+						],
 					},
 					{
-						name: "下载",
-						desc: "仅支持官方社区已上架的插件与主题。未上架的插件需用 BRAT 下载。（我做了汉化，已被作者合并）",
-						render: (setting) => this.renderDownloadRow(setting),
+						// 「高级」页承接原无标题镜像组：镜像测速为低频板块（原发布版设计
+						// 勿补组标题的口径，由页名承接），页内行序不变。
+						type: "page",
+						name: SETTINGS_ROOT_PAGE.advanced,
+						desc: "镜像测速与镜像源连通状态。",
+						items: [
+							{
+								name: "镜像测速",
+								desc: "查看各镜像源当前的连通与延迟。",
+								render: (setting) => this.renderProbeControlRow(setting),
+							},
+							...MIRRORS.map((mirror, index) => ({
+								name: mirror.label,
+								render: (setting: Setting) =>
+									this.renderMirrorRow(setting, index),
+							})),
+						],
 					},
-					{
-						name: "风险提示",
-						desc: "插件上架前虽然会有官方自动审核，但多数插件为个人开发者维护，无法确保质量。建议优先选用下载量大、长期稳定维护的插件。",
-					},
-					{
-						name: "免责声明",
-						desc: "下载与安装即代表你已知悉并自行承担由此带来的全部风险（包括但不限于数据丢失、设备安全、隐私泄露等）。",
-					},
-				],
-			},
-			{
-				type: "group",
-				// 无标题组：镜像测速为低频板块置页末，与回落路径轻分组同形态
-				// （发布版设计，勿补 heading）。
-				items: [
-					{
-						name: "镜像测速",
-						desc: "查看各镜像源当前的连通与延迟。",
-						render: (setting) => this.renderProbeControlRow(setting),
-					},
-					...MIRRORS.map((mirror, index) => ({
-						name: mirror.label,
-						render: (setting: Setting) =>
-							this.renderMirrorRow(setting, index),
-					})),
 				],
 			},
 		];
@@ -145,6 +252,14 @@ export class OpenplugSettingTab extends PluginSettingTab {
 					.setButtonText("打开")
 					.setCta()
 					.onClick(() => {
+						// 桌面设置是 modal、手机是满屏 pane：不收走设置，openView
+						// 的激活全被遮挡（用户感知"没反应"）。先收设置再开面板，
+						// 让跳转意图当场可见；本行在设置页首位，想回来重开即可。
+						// app.setting 未进公开 d.ts，窄声明接管（同 getActiveLeaf 惯例）。
+						const settingsDialog = this.app as unknown as {
+							setting: { close: () => void };
+						};
+						settingsDialog.setting.close();
 						void this.plugin.openView();
 					});
 			});
@@ -254,41 +369,44 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		setting.descEl.append(" 下载。（我做了汉化，已被作者合并）");
 	}
 
-	/** 关于：与 Sidet / Square 同构的窄条目信息行。 */
+	/** 「关于」组：EasySync 三行同型照抄（产品/作者/问题反馈），与声明式关于页逐行同构。 */
 	private renderAboutGroup(containerEl: HTMLElement): void {
 		const group = new SettingGroup(containerEl).setHeading("关于");
 		this.addReadOnlySetting(
 			group,
-			"产品",
-			`OpenPlug ${this.plugin.manifest.version?.trim() || ""}`,
+			"OpenPlug",
+			`版本 ${this.plugin.manifest.version?.trim() || ""}`,
 		);
 		group.addSetting((setting) => this.renderAuthorRow(setting));
+		this.addReadOnlySetting(
+			group,
+			"问题反馈",
+			"使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
+		);
 	}
 
+	/** 作者行：GitHub／小红书图标钮（EasySync 同型照抄；两轨道共用同一构建器）。 */
 	private renderAuthorRow(setting: Setting): void {
 		setting
+			.setClass("openplug-settings-about-contact-setting")
 			.setName("作者")
-			.setDesc(
-				"焦应行（Jiao Yingxing）。使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
-			)
-			.addButton((button) => {
-				button
-					.setButtonText("GitHub")
-					.onClick(() => {
-						window.open(GITHUB_URL, "_blank", "noopener,noreferrer");
-					});
-			})
-			.addButton((button) => {
-				button
-					.setButtonText("小红书")
-					.onClick(() => {
-						window.open(
-							XIAOHONGSHU_URL,
-							"_blank",
-							"noopener,noreferrer",
-						);
-					});
+			.setDesc("焦应行（Jiao Yingxing）");
+		setting.addButton((button) => {
+			configureAboutContactButton(button, {
+				label: "GitHub",
+				icon: "github",
+				url: GITHUB_URL,
 			});
+		});
+		setting.addButton((button) => {
+			configureAboutContactButton(button, {
+				label: "小红书",
+				icon: "book-open",
+				url: XIAOHONGSHU_URL,
+				extraClassName:
+					"openplug-settings-about-contact-button--xiaohongshu",
+			});
+		});
 	}
 
 	private addReadOnlySetting(

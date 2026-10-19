@@ -1,9 +1,9 @@
 {
 	"id": "openplug",
 	"name": "OpenPlug",
-	"version": "0.3.3",
+	"version": "0.3.4",
 	"minAppVersion": "1.11.4",
-	"description": "Install official community plugins via domestic mirror acceleration, without a VPN.",
+	"description": "不用 VPN，轻松装好社区插件与主题。Easily install community plugins and themes without a VPN.",
 	"author": "Jiao Yingxing",
 	"isDesktopOnly": false
 }
