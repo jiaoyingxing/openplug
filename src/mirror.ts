@@ -1,6 +1,13 @@
 import { App, requestUrl } from "obsidian";
 
 import { PROBE_TIMEOUT_MS, REQUEST_TIMEOUT_MS, withTimeout } from "./util";
+import {
+	parseJsDelivrVersionList,
+	parseManifestVersion,
+	pickLatestStableVersion,
+} from "./update-check";
+
+export { compareNumericVersions } from "./update-check";
 
 export interface Mirror {
 	id: string;
@@ -11,6 +18,7 @@ export interface Mirror {
 export const MIRRORS: Mirror[] = [
 	{ id: "gh-proxy", label: "gh-proxy.com", prefix: "https://gh-proxy.com/" },
 	{ id: "ghfast", label: "ghfast.top", prefix: "https://ghfast.top/" },
+	{ id: "gh-monlor", label: "gh.monlor.com", prefix: "https://gh.monlor.com/" },
 	{ id: "wget-la", label: "wget.la", prefix: "https://wget.la/" },
 ];
 
@@ -19,6 +27,14 @@ const LIST_URL =
 const THEME_LIST_URL =
 	"https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-css-themes.json";
 const RAW_BASE = "https://raw.githubusercontent.com/";
+
+/** Update checks use a shorter budget than installs: a dead data API must not
+ * hold the whole update list for 30s per plugin. */
+const UPDATE_CHECK_TIMEOUT_MS = 10_000;
+/** One jsDelivr availability probe per check round; a live endpoint answers in
+ * about a second, and the fallback is cheap enough to prefer over a long wait. */
+const UPDATE_CHECK_PROBE_TIMEOUT_MS = 5_000;
+const UPDATE_CHECK_PROBE_REPO = "jiaoyingxing/openplug";
 
 export interface PluginInfo {
 	id: string;
@@ -269,25 +285,21 @@ export async function probeMirrorsHealth(): Promise<MirrorProbe[]> {
  * v1/package/gh（响应头 Deprecation: 2023-01-01，successor-version 指向
  * v1/packages/gh），故用复数端点；条目为 {version,...} 对象数组，缺
  * version 的畸形条目过滤而非崩溃。 */
-export async function fetchVersions(repo: string, maxVersions = 15): Promise<string[]> {
+export async function fetchVersions(
+	repo: string,
+	maxVersions = 15,
+	timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<string[]> {
 	const res = await withTimeout(
 		requestUrl({ url: `https://data.jsdelivr.com/v1/packages/gh/${repo}` }),
-		REQUEST_TIMEOUT_MS,
+		timeoutMs,
 	);
 	if (res.status >= 300) {
 		throw new Error(`HTTP ${res.status}`);
 	}
-	const data = JSON.parse(res.text) as { versions?: unknown };
-	const entries: unknown[] = Array.isArray(data.versions) ? data.versions : [];
-	const versions: string[] = [];
-	for (const entry of entries) {
-		if (
-			typeof entry === "object" &&
-			entry !== null &&
-			typeof (entry as { version?: unknown }).version === "string"
-		) {
-			versions.push((entry as { version: string }).version);
-		}
+	const versions = parseJsDelivrVersionList(res.text);
+	if (versions === null) {
+		throw new Error("版本列表解析失败");
 	}
 	return versions.slice(0, maxVersions);
 }
@@ -308,57 +320,101 @@ export interface PluginUpdateEntry {
 	latestVersion: string;
 }
 
-/** 稳定版标签：纯数字点分段。jsDelivr 版本列表按 tag 时间倒序且含预发布
- * （实测 excalidraw 首项是 2.27.0-beta.8），稳定版判定不能放行预发布。 */
-function isStableVersion(v: string): boolean {
-	return /^\d+(\.\d+)+$/.test(v);
+// Version parsing/comparison lives in ./update-check (pure, host-free).
+
+let updateCheckProbe: Promise<boolean> | null = null;
+
+/** Re-probe on each update-check round (view open / retry); one probe result
+ * is shared by every plugin in that round. */
+export function resetUpdateCheckSourceProbe(): void {
+	updateCheckProbe = null;
 }
 
-/** 数字版本比较：剥离预发布/构建后缀后逐段数值比、缺段补零；a 高于 b
- * 返回正数、相等 0、低于返回负数，任一侧剥完仍有非数字段则 null。与宿主
- * 更新判定同口径（官方只认 x.y.z，预发布后缀不参与大小；论坛主题 87229），
- * 2.27.0-beta.8 与 2.27.0 由此相等、互不推荐。 */
-export function compareNumericVersions(a: string, b: string): number | null {
-	const core = (v: string): number[] | null => {
-		const parts = v.split(/[-+]/)[0].split(".");
-		if (!parts.every((p) => /^\d+$/.test(p))) {
-			return null;
-		}
-		return parts.map(Number);
-	};
-	const pa = core(a);
-	const pb = core(b);
-	if (!pa || !pb) {
-		return null;
+function isDataApiAvailable(): Promise<boolean> {
+	if (updateCheckProbe === null) {
+		updateCheckProbe = (async () => {
+			try {
+				const versions = await fetchVersions(
+					UPDATE_CHECK_PROBE_REPO,
+					1,
+					UPDATE_CHECK_PROBE_TIMEOUT_MS,
+				);
+				return versions.length > 0;
+			} catch {
+				return false;
+			}
+		})();
 	}
-	const len = Math.max(pa.length, pb.length);
-	for (let i = 0; i < len; i += 1) {
-		const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-		if (diff !== 0) {
-			return diff > 0 ? 1 : -1;
-		}
-	}
-	return 0;
+	return updateCheckProbe;
 }
 
-/** 官方插件最新稳定发布版（无则 null）：200 条内取数值最高的稳定标签。
- * 列表按 tag 时间倒序但不承诺语义序（上游先发 1.2.0 后补打 1.1.5 热修
- * tag 时首项更低），不做首项假设。jsDelivr 数据 API 直连，不走公益镜像、
- * 不受其共享限流；与版本下拉同一数据源（DECISIONS 镜像策略）。 */
+async function fetchManifestVersionFromMirror(
+	repo: string,
+	mirror: Mirror,
+): Promise<string> {
+	const res = await withTimeout(
+		requestUrl({ url: `${mirror.prefix}${RAW_BASE}${repo}/HEAD/manifest.json` }),
+		UPDATE_CHECK_TIMEOUT_MS,
+	);
+	if (res.status >= 300) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+	const version = parseManifestVersion(res.text);
+	if (!version) {
+		throw new Error("manifest 缺少稳定版本号");
+	}
+	return version;
+}
+
+/** Mirror-proxied default-branch manifest; races all mirrors and takes the
+ * first stable version. Used only when the jsDelivr tag source is unavailable. */
+export async function fetchManifestVersion(repo: string): Promise<string> {
+	return promiseAny(
+		MIRRORS.map((mirror) => fetchManifestVersionFromMirror(repo, mirror)),
+	);
+}
+
+/** 官方插件最新稳定发布版（无则 null）。
+ *
+ * Primary: jsDelivr tag list (numeric max stable; the list is tag-time
+ * descending but not semantically ordered). When data.jsdelivr is unreachable
+ * (CN networks, 2026-10-21 batch outage), fall back to the default-branch
+ * manifest through the mirror pool. The manifest path matches what the host
+ * reads, but a plugin that publishes a tag without bumping its manifest can be
+ * missed during the degraded round; that trade-off is recorded in DECISIONS.
+ * Throws only when every source failed, so the view can count a real failure
+ * instead of silently reporting "no updates". */
 export async function fetchLatestStableVersion(
 	repo: string,
 ): Promise<string | null> {
-	const versions = await fetchVersions(repo, 200);
-	let latest: string | null = null;
-	for (const v of versions) {
-		if (
-			isStableVersion(v) &&
-			(latest === null || (compareNumericVersions(v, latest) ?? 0) > 0)
-		) {
-			latest = v;
+	let reachable = false;
+	if (await isDataApiAvailable()) {
+		try {
+			const versions = await fetchVersions(
+				repo,
+				200,
+				UPDATE_CHECK_TIMEOUT_MS,
+			);
+			reachable = true;
+			const latest = pickLatestStableVersion(versions);
+			if (latest) {
+				return latest;
+			}
+		} catch {
+			// Fall through to the manifest transport.
 		}
 	}
-	return latest;
+	try {
+		const latest = await fetchManifestVersion(repo);
+		reachable = true;
+		return latest;
+	} catch {
+		// Fall through to the failure decision below.
+	}
+	if (!reachable) {
+		throw new Error("update-check-sources-unavailable");
+	}
+	return null;
 }
 
 async function sha256(buf: ArrayBuffer): Promise<string> {

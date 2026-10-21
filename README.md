@@ -68,8 +68,8 @@ OpenPlug 接管官网“Add to Obsidian”跳转，基于官方清单完成搜�
 运行时只发起以下 HTTPS 请求，全部用于获取**公开**数据：
 
 - 官方清单：`community-plugins.json` 与 `community-css-themes.json`（用于搜索与跳转解析）。
-- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`wget.la` —— 用于下载清单、manifest 与插件文件。
-- jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件版本列表（历史版本下拉与更新检测）。
+- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`gh.monlor.com`、`wget.la` —— 用于下载清单、manifest 与插件文件。
+- jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件版本列表（历史版本下拉与更新检测）；更新检测不可达时，经上述镜像读取 manifest 版本（降级模式，可能漏报仅更新 tag 未更新 manifest 的插件）。
 - 翻译接口（仅发送**公开的插件描述文本**，用于将侧栏简介译成中文）：`uapis.cn`（主源）、`api.mymemory.translated.net`（兜底）。
 
 不收集任何用户数据，无遥测，无广告，无账号要求。更新检测仅在本机将已安装插件与官方清单比对，不上传任何安装信息。

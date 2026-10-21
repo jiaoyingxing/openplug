@@ -18,6 +18,7 @@ import {
 	PluginInfo,
 	PluginListItem,
 	PluginUpdateEntry,
+	resetUpdateCheckSourceProbe,
 	ThemeListItem,
 } from "./mirror";
 
@@ -466,6 +467,9 @@ export class OpenplugPickerView extends ItemView {
 	 */
 	private async checkAndRenderUpdates(section: HTMLElement): Promise<void> {
 		const seq = ++this.updatesSeq;
+		// 每轮重新探一次 data API；本轮所有插件共用结果，重试按钮可重新探测。
+		// 探测失败后本会话的检查走镜像 manifest 降级（见 mirror.ts）。
+		resetUpdateCheckSourceProbe();
 		// 先落「检查中」状态行：官方清单加载可能较慢，避免板块空白
 		// （2026-08-31 用户要求：无内容时区块不得只剩空壳）。
 		section.empty();
