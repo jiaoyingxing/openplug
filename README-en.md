@@ -55,7 +55,8 @@ The installer home page automatically checks your installed official plugins for
 | --- | --- |
 | Protocol interception | Captures the official `Add to Obsidian` redirect (plugins and themes) and completes the install chain under restricted networks |
 | Official directory search | Searches the official plugin / theme list by name, author, or ID, with a Chinese UI |
-| Info card & translation | Shows version, author, ID, and compatibility; auto-translates plugin descriptions into Chinese (falls back to the original text without blocking) |
+| Category filter | Browses official community categories with multi-select filters; shows download counts and last-update dates |
+| Info card & translation | Shows version, author, ID, and compatibility; Top 500 plugins use external preset Chinese descriptions, with machine translation as a detail-page fallback for new plugins (falls back to the original text without blocking) |
 | Version selection | Lists published versions and installs the latest by default; older versions can be picked |
 | Multi-mirror acceleration | Races multiple domestic GitHub mirror nodes with a 30s timeout and SHA-256 cross-verification, auto-switching when a node fails |
 | Theme installation | Installs official themes through the same flow |
@@ -68,9 +69,12 @@ The installer home page automatically checks your installed official plugins for
 At runtime the plugin only makes the following HTTPS requests, all for **public** data:
 
 - Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
+- Official community directory API (`community.obsidian.md`): category tags, download counts, and last-update dates. Only category / sort / page parameters are sent; search terms stay local.
 - Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `gh.monlor.com`, `wget.la` — used to download lists, manifests, and plugin files.
 - jsDelivr data API (`data.jsdelivr.com`): plugin version lists (version picker and update checks). When the API is unreachable, update checks read the manifest version through the mirrors above (degraded mode; a release that bumps only its tag but not its manifest may be missed).
-- Translation APIs (only the **public plugin description text** is sent, for translating the sidebar description into Chinese): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
+- GitHub tags API (`api.github.com`): one-shot fallback for the detail-page version picker only when the jsDelivr version list is unreachable; cached per plugin for 10 minutes.
+- Preset translation data (public plugin descriptions, no user data): `raw.githubusercontent.com`.
+- Translation APIs (only the **public plugin description text** is sent, for translating uncovered descriptions on the detail page): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
 
 No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 

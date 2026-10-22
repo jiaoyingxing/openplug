@@ -2,6 +2,7 @@ import { App, requestUrl } from "obsidian";
 
 import { PROBE_TIMEOUT_MS, REQUEST_TIMEOUT_MS, withTimeout } from "./util";
 import {
+	isStableVersion,
 	parseJsDelivrVersionList,
 	parseManifestVersion,
 	pickLatestStableVersion,
@@ -35,6 +36,15 @@ const UPDATE_CHECK_TIMEOUT_MS = 10_000;
  * about a second, and the fallback is cheap enough to prefer over a long wait. */
 const UPDATE_CHECK_PROBE_TIMEOUT_MS = 5_000;
 const UPDATE_CHECK_PROBE_REPO = "jiaoyingxing/openplug";
+/** 详情版本列表：jsDelivr 失败后仍要尽快给出 GitHub tags 兜底。 */
+const PICKER_VERSION_TIMEOUT_MS = 10_000;
+/** 同一插件短时间重复打开详情时复用版本列表，避免反复触发兜底竞速。 */
+const PICKER_VERSIONS_CACHE_TTL_MS = 10 * 60 * 1000;
+const PICKER_VERSIONS_CACHE_LIMIT = 50;
+const pickerVersionsCache = new Map<
+	string,
+	{ versions: string[]; at: number }
+>();
 
 export interface PluginInfo {
 	id: string;
@@ -285,7 +295,7 @@ export async function probeMirrorsHealth(): Promise<MirrorProbe[]> {
  * v1/package/gh（响应头 Deprecation: 2023-01-01，successor-version 指向
  * v1/packages/gh），故用复数端点；条目为 {version,...} 对象数组，缺
  * version 的畸形条目过滤而非崩溃。 */
-export async function fetchVersions(
+async function fetchVersions(
 	repo: string,
 	maxVersions = 15,
 	timeoutMs = REQUEST_TIMEOUT_MS,
@@ -302,6 +312,65 @@ export async function fetchVersions(
 		throw new Error("版本列表解析失败");
 	}
 	return versions.slice(0, maxVersions);
+}
+
+/** GitHub tags 兜底；direct + 镜像前缀竞速，兼容移动端直连不可达。 */
+async function fetchGitHubTags(repo: string, prefix = ""): Promise<string[]> {
+	const res = await withTimeout(
+		requestUrl({
+			url: `${prefix}https://api.github.com/repos/${repo}/tags?per_page=100`,
+		}),
+		PICKER_VERSION_TIMEOUT_MS,
+	);
+	if (res.status >= 300) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+	const data = res.json as Array<{ name?: unknown }> | null;
+	if (!Array.isArray(data)) {
+		throw new Error("GitHub tags 解析失败");
+	}
+	return data
+		.map((entry) => (typeof entry.name === "string" ? entry.name : ""))
+		.filter((name) => name.length > 0);
+}
+
+/** 详情安装版本：jsDelivr 失败时退到 GitHub tags（直连 + 镜像竞速）；稳定 tag 优先，最多 15 个。 */
+export async function fetchPickerVersions(repo: string): Promise<string[]> {
+	const cached = pickerVersionsCache.get(repo);
+	if (cached && Date.now() - cached.at < PICKER_VERSIONS_CACHE_TTL_MS) {
+		return cached.versions;
+	}
+	const versions = await loadPickerVersions(repo);
+	pickerVersionsCache.set(repo, { versions, at: Date.now() });
+	if (pickerVersionsCache.size > PICKER_VERSIONS_CACHE_LIMIT) {
+		const oldest = pickerVersionsCache.keys().next().value;
+		if (oldest !== undefined) {
+			pickerVersionsCache.delete(oldest);
+		}
+	}
+	return versions;
+}
+
+async function loadPickerVersions(repo: string): Promise<string[]> {
+	try {
+		return await fetchVersions(repo, 15, PICKER_VERSION_TIMEOUT_MS);
+	} catch {
+		const tags = await promiseAny([
+			fetchGitHubTags(repo),
+			...MIRRORS.map((mirror) => fetchGitHubTags(repo, mirror.prefix)),
+		]);
+		const seen = new Set<string>();
+		const stable: string[] = [];
+		const rest: string[] = [];
+		for (const tag of tags) {
+			if (seen.has(tag)) {
+				continue;
+			}
+			seen.add(tag);
+			(isStableVersion(tag) ? stable : rest).push(tag);
+		}
+		return (stable.length > 0 ? stable : rest).slice(0, 15);
+	}
 }
 
 /** 已安装插件版本快照（更新检测输入；插件目录里有 manifest 就算已安装）。 */
@@ -368,7 +437,7 @@ async function fetchManifestVersionFromMirror(
 
 /** Mirror-proxied default-branch manifest; races all mirrors and takes the
  * first stable version. Used only when the jsDelivr tag source is unavailable. */
-export async function fetchManifestVersion(repo: string): Promise<string> {
+async function fetchManifestVersion(repo: string): Promise<string> {
 	return promiseAny(
 		MIRRORS.map((mirror) => fetchManifestVersionFromMirror(repo, mirror)),
 	);

@@ -1,7 +1,10 @@
-import { ItemView, setIcon } from "obsidian";
+import { ItemView, Notice, SearchComponent, setIcon } from "obsidian";
 
 import { VIEW_TYPE_PICKER } from "./consts";
-import { translateText } from "./translate";
+import { getPresetTranslation } from "./preset-translations";
+import { StoreDetailMeta } from "./store";
+import { StoreSection } from "./store-view";
+import { translateTextCached } from "./translate";
 import { openExternal } from "./util";
 import {
 	compareNumericVersions,
@@ -9,7 +12,7 @@ import {
 	fetchPluginInfo,
 	fetchPluginList,
 	fetchThemeList,
-	fetchVersions,
+	fetchPickerVersions,
 	installPlugin,
 	installTheme,
 	INSTALL_TARGET_FILES,
@@ -23,6 +26,9 @@ import {
 } from "./mirror";
 
 type SearchKind = "plugin" | "theme";
+
+/** 搜索输入防抖：避免逐字重渲染与重复请求。 */
+const SEARCH_DEBOUNCE_MS = 250;
 
 type BannerState = "is-loading" | "is-success" | "is-error";
 
@@ -43,11 +49,17 @@ interface SearchResult {
 export class OpenplugPickerView extends ItemView {
 	private versionSelect: HTMLSelectElement | null = null;
 	private searchEl: HTMLInputElement | null = null;
+	private searchComponent: SearchComponent | null = null;
+	private searchDebounceTimer: number | null = null;
 	private bodyEl: HTMLElement | null = null;
 	private rootEl: HTMLElement | null = null;
 	private bannerEl: HTMLElement | null = null;
+	private storeAddHost: HTMLElement | null = null;
+	private storeSection: StoreSection | null = null;
 	private listCache: PluginListItem[] | null = null;
 	private themeListCache: ThemeListItem[] | null = null;
+	/** 清单加载合一：并发调用共享同一轮请求，失败后下次重试。 */
+	private listsPromise: Promise<void> | null = null;
 	/** 更新检测的最新版本缓存（TTL 内不重复请求 jsDelivr；键 = 插件 id）。 */
 	private updateLatestCache = new Map<string, { latest: string; at: number }>();
 	private static readonly UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
@@ -75,9 +87,17 @@ export class OpenplugPickerView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		if (this.searchDebounceTimer !== null) {
+			window.clearTimeout(this.searchDebounceTimer);
+			this.searchDebounceTimer = null;
+		}
+		this.storeSection?.dispose();
+		this.storeSection = null;
 		this.contentEl.empty();
 		this.rootEl = null;
 		this.searchEl = null;
+		this.searchComponent = null;
+		this.storeAddHost = null;
 		this.bodyEl = null;
 	}
 
@@ -88,15 +108,23 @@ export class OpenplugPickerView extends ItemView {
 		this.contentEl.empty();
 		this.rootEl = this.contentEl.createDiv({ cls: "openplug-root" });
 		const topbar = this.rootEl.createDiv({ cls: "openplug-topbar" });
-		const searchWrap = topbar.createDiv({ cls: "search-input-container" });
-		this.searchEl = searchWrap.createEl("input", {
-			cls: "openplug-search",
-			type: "text",
-			placeholder: "搜索插件名 / 主题名 / 作者…",
+		const topRow = topbar.createDiv({ cls: "openplug-top-row" });
+		const searchWrap = topRow.createDiv({ cls: "openplug-search-wrap" });
+		const search = new SearchComponent(searchWrap);
+		search.setPlaceholder("搜索插件名 / 主题名 / 作者…");
+		search.inputEl.setAttribute("aria-label", "搜索插件名、主题名或作者");
+		this.searchComponent = search;
+		this.searchEl = search.inputEl;
+		search.onChange(() => {
+			if (this.searchDebounceTimer !== null) {
+				window.clearTimeout(this.searchDebounceTimer);
+			}
+			this.searchDebounceTimer = window.setTimeout(() => {
+				this.searchDebounceTimer = null;
+				void this.onSearchInput();
+			}, SEARCH_DEBOUNCE_MS);
 		});
-		this.searchEl.addEventListener("input", () => {
-			void this.onSearchInput();
-		});
+		this.storeAddHost = topRow.createDiv();
 		this.bannerEl = topbar.createDiv({ cls: "openplug-banner is-hidden" });
 		this.bodyEl = this.rootEl.createDiv({ cls: "openplug-body" });
 	}
@@ -168,41 +196,40 @@ export class OpenplugPickerView extends ItemView {
 	private renderEmptyState(container: HTMLElement): void {
 		container.empty();
 		const wrap = container.createDiv({ cls: "openplug-empty" });
-		// 顶部「使用方式」：标题在壳外（设置页观感——大标题置于板块壳之上，
-		// 2026-08-30 用户确认），卡内只放 3 步编号。
-		wrap.createDiv({ cls: "openplug-heading", text: "使用方式" });
+		const store = this.ensureStoreSection();
+		if (this.storeAddHost) {
+			store.mountAddButton(this.storeAddHost);
+		}
+		const storeResultsEl = wrap.createDiv({
+			cls: "openplug-store-section openplug-store-anchor",
+		});
+		store.mountResults(storeResultsEl);
+		// 顶部「官方社区」：标题在壳外（设置页观感），卡内只放 3 步编号。
+		wrap.createDiv({ cls: "openplug-heading", text: "官方社区" });
 		const guideCard = wrap.createDiv({ cls: "openplug-home-card" });
 		const ol = guideCard.createEl("ol", { cls: "openplug-steps" });
 		// 5 句压缩为 3 句编号（2026-08-30 用户要求）：1+2 融合浏览/筛选，
 		// 4 + 附注融合完成/搜索替代；官方社区链接、Add to Obsidian 语义
 		// 与核心流程不减。第 3 句三连修（2026-08-30 用户复核）：同意弹窗
 		// 在浏览器侧而非 Obsidian 内；安装需用户手动点按钮、非同意即装；
-		// 删除后半句（搜索栏位于顶部、不言自明）。第一步仍内嵌官方社区
-		// 链接；按位置判定，避免文案字符串与渲染逻辑耦合（改文案会静默
-		// 丢链接）。
-		const steps: string[] = [
-			"打开 Obsidian 官方社区，筛选并找到你需要的插件或主题",
+		// 删除后半句（搜索栏位于顶部、不言自明）。第一步单独构建以嵌入
+		// 官方社区链接；后两步按顺序追加。
+		const first = ol.createEl("li");
+		first.append("打开 ");
+		const communityLink = first.createEl("a", {
+			text: "Obsidian 官方社区",
+			href: "https://community.obsidian.md/",
+		});
+		communityLink.addEventListener("click", (e) => {
+			e.preventDefault();
+			openExternal("https://community.obsidian.md/");
+		});
+		first.append("，筛选并找到你需要的插件或主题");
+		for (const s of [
 			'进入插件/主题页面，点击“Add to Obsidian”',
 			"在浏览器中同意打开 Obsidian，回到本面板后点击安装按钮完成安装",
-		];
-		for (const [index, s] of steps.entries()) {
-			const li = ol.createEl("li");
-			if (index === 0) {
-				// 按位置判定，避免文案字符串与渲染逻辑耦合（改文案会静默
-				// 丢链接）。
-				li.append("打开 ");
-				const a = li.createEl("a", {
-					text: "Obsidian 官方社区",
-					href: "https://community.obsidian.md/",
-				});
-				a.addEventListener("click", (e) => {
-					e.preventDefault();
-					openExternal("https://community.obsidian.md/");
-				});
-				li.append("，筛选并找到你需要的插件或主题");
-			} else {
-				li.textContent = s;
-			}
+		]) {
+			ol.createEl("li", { text: s });
 		}
 		// 底部「插件更新」：标题在壳外（设置页观感），卡内只放检查状态与行。
 		// 打开即自动检查（TTL 缓存兜底，决策见 DECISIONS「更新检测」）。
@@ -211,21 +238,61 @@ export class OpenplugPickerView extends ItemView {
 		void this.checkAndRenderUpdates(updatesEl);
 	}
 
-	private async ensureLists(): Promise<void> {
+	private ensureLists(): Promise<void> {
+		if (this.listsPromise) {
+			return this.listsPromise;
+		}
+		this.listsPromise = (async () => {
+			if (!this.listCache) {
+				try {
+					this.listCache = await fetchPluginList();
+				} catch {
+					// 列表拉取失败不影响协议劫持路径
+				}
+			}
+			if (!this.themeListCache) {
+				try {
+					this.themeListCache = await fetchThemeList();
+				} catch {
+					// 同上
+				}
+			}
+		})().finally(() => {
+			this.listsPromise = null;
+		});
+		return this.listsPromise;
+	}
+
+	private ensureStoreSection(): StoreSection {
+		if (!this.storeSection) {
+			this.storeSection = new StoreSection(
+				this.app,
+				(id, meta) => {
+					void this.openPluginFromStore(id, meta);
+				},
+			);
+		}
+		return this.storeSection;
+	}
+
+	/** 商店行进入详情：先确保本地清单已就绪，再复用现役 loadFor 主链。 */
+	private async openPluginFromStore(
+		id: string,
+		meta: StoreDetailMeta,
+	): Promise<void> {
 		if (!this.listCache) {
-			try {
-				this.listCache = await fetchPluginList();
-			} catch {
-				// 列表拉取失败不影响协议劫持路径
-			}
+			const line = this.bannerLine();
+			line.update("正在加载列表…", "is-loading");
+			await this.ensureLists();
+			line.close();
+		} else {
+			await this.ensureLists();
 		}
-		if (!this.themeListCache) {
-			try {
-				this.themeListCache = await fetchThemeList();
-			} catch {
-				// 同上
-			}
+		if (!this.listCache?.some((entry) => entry.id === id)) {
+			new Notice("本地清单尚未同步，请稍后重试");
+			return;
 		}
+		await this.loadFor(id, meta);
 	}
 
 	private async onSearchInput(): Promise<void> {
@@ -236,10 +303,12 @@ export class OpenplugPickerView extends ItemView {
 			return;
 		}
 		if (!q) {
+			this.storeSection?.setSearchActive(false);
 			body.empty();
 			this.renderEmptyState(body);
 			return;
 		}
+		this.storeSection?.setSearchActive(true);
 		if (!this.listCache || !this.themeListCache) {
 			body.empty();
 			// 列表加载的临时文本并入顶部状态行（2026-08-30 用户要求
@@ -307,6 +376,15 @@ export class OpenplugPickerView extends ItemView {
 				text: `${r.author} · ${r.desc}`,
 				cls: "openplug-result-desc",
 			});
+			if (r.kind === "plugin") {
+				const preset = getPresetTranslation(r.id);
+				if (preset) {
+					row.createDiv({
+						cls: "openplug-result-trans openplug-desc-trans",
+						text: preset,
+					});
+				}
+			}
 			row.addEventListener("click", () => {
 				if (r.kind === "plugin") {
 					void this.loadFor(r.id);
@@ -317,7 +395,7 @@ export class OpenplugPickerView extends ItemView {
 		}
 	}
 
-	async loadFor(pluginId: string): Promise<void> {
+	async loadFor(pluginId: string, meta?: StoreDetailMeta): Promise<void> {
 		this.ensureLayout();
 		const root = this.bodyEl;
 		if (!root) {
@@ -336,7 +414,7 @@ export class OpenplugPickerView extends ItemView {
 				throw new Error("官方插件清单加载失败");
 			}
 			const { info, mirror } = await fetchPluginInfo(this.listCache, pluginId);
-			this.renderInfoCard(root, info, mirror);
+			this.renderInfoCard(root, info, mirror, meta);
 			line.close();
 			const actions = root.createDiv({ cls: "openplug-actions" });
 			this.renderVersion(actions, info);
@@ -379,6 +457,7 @@ export class OpenplugPickerView extends ItemView {
 		container: HTMLElement,
 		info: PluginInfo,
 		mirror: { label: string; prefix: string },
+		meta?: StoreDetailMeta,
 	): void {
 		const card = container.createDiv({ cls: "openplug-infocard" });
 		this.addCloseButton(card);
@@ -392,6 +471,12 @@ export class OpenplugPickerView extends ItemView {
 		if (info.author) {
 			this.addMetaLine(metaGroup, "作者", info.author);
 		}
+		if (meta?.downloads) {
+			this.addMetaLine(metaGroup, "下载量", meta.downloads);
+		}
+		if (meta?.updated) {
+			this.addMetaLine(metaGroup, "上次更新", meta.updated);
+		}
 		this.addMetaLine(metaGroup, "ID", info.id);
 		const compat = this.buildCompatLine(info);
 		if (compat) {
@@ -400,8 +485,16 @@ export class OpenplugPickerView extends ItemView {
 		if (info.description) {
 			const descGroup = card.createDiv({ cls: "openplug-group" });
 			descGroup.createEl("p", { text: info.description, cls: "openplug-desc" });
-			const trans = descGroup.createEl("p", { cls: "openplug-desc-trans" });
-			void this.translateDescription(info.description, trans);
+			const preset = getPresetTranslation(info.id);
+			if (preset) {
+				descGroup.createEl("p", {
+					cls: "openplug-desc-trans",
+					text: `译文：${preset}`,
+				});
+			} else {
+				const trans = descGroup.createEl("p", { cls: "openplug-desc-trans" });
+				void this.translateDescription(info.description, trans);
+			}
 		}
 		const linksGroup = card.createDiv({ cls: "openplug-group" });
 		const links = linksGroup.createDiv({ cls: "openplug-links" });
@@ -448,9 +541,8 @@ export class OpenplugPickerView extends ItemView {
 		setIcon(btn, "x");
 		btn.setAttribute("aria-label", "关闭并返回首页");
 		btn.addEventListener("click", () => {
-			if (this.searchEl) {
-				this.searchEl.value = "";
-			}
+			this.searchComponent?.setValue("");
+			this.storeSection?.setSearchActive(false);
 			// 只清完结行：进行中的下载/更新行保留在顶部，任务与可见进度
 			// 均不因返回首页中断
 			this.bannerSweepFinished();
@@ -764,7 +856,7 @@ export class OpenplugPickerView extends ItemView {
 	}
 
 	private async translateDescription(desc: string, el: HTMLElement): Promise<void> {
-		const zh = await translateText(desc);
+		const zh = await translateTextCached(desc);
 		if (zh && zh.trim() && zh.trim() !== desc.trim()) {
 			el.setText(`译文：${zh.trim()}`);
 		} else {
@@ -777,7 +869,7 @@ export class OpenplugPickerView extends ItemView {
 		const select = parent.createEl("select", { cls: "openplug-select" });
 		select.createEl("option", { value: "", text: `最新 ${info.version}` });
 		this.versionSelect = select;
-		void fetchVersions(info.repo)
+		void fetchPickerVersions(info.repo)
 			.then((tags) => {
 				for (const tag of tags) {
 					if (tag !== info.version) {

@@ -1,6 +1,7 @@
-import { Notice, Platform, Plugin, WorkspaceLeaf } from "obsidian";
+import { addIcon, Notice, Platform, Plugin, WorkspaceLeaf } from "obsidian";
 
 import { VIEW_TYPE_PICKER } from "./consts";
+import { loadPresetTranslations } from "./preset-translations";
 import { OpenplugSettingTab } from "./setting";
 import { OpenplugPickerView } from "./view";
 
@@ -14,6 +15,11 @@ const COLD_START_SETTLE_MS = 500;
 /** 冷启动焦点轮询：间隔与最大次数（窗口约 200ms × 8 = 1.6s 内有限重夺）。 */
 const COLD_START_RECLAIM_INTERVAL_MS = 200;
 const COLD_START_RECLAIM_MAX_ATTEMPTS = 8;
+/** 官方社区 integrations 图标；宿主把 `blocks` 别名成 layout-list，故用前缀独立注册。 */
+const OPENPLUG_BLOCKS_ICON = "openplug-blocks";
+/** Lucide 为 24 视口，addIcon 的自定义图标固定 100 视口，故按 100/24 放大。 */
+const OPENPLUG_BLOCKS_SVG =
+	'<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(4.1666667)"><path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2"></path><rect x="14" y="2" width="8" height="8" rx="1"></rect></g>';
 
 type ProtocolCallback = (params: Record<string, string>) => void;
 
@@ -87,6 +93,8 @@ export default class OpenplugPlugin extends Plugin {
 	private lastHandled: { key: string; at: number } | null = null;
 
 	async onload(): Promise<void> {
+		addIcon(OPENPLUG_BLOCKS_ICON, OPENPLUG_BLOCKS_SVG);
+		void loadPresetTranslations();
 		this.registerView(
 			VIEW_TYPE_PICKER,
 			(leaf: WorkspaceLeaf) => new OpenplugPickerView(leaf),

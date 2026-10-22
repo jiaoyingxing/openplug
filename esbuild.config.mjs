@@ -32,7 +32,9 @@ const context = await esbuild.context({
 		...builtinModules,
 	],
 	format: "cjs",
-	target: "es2018",
+	// Obsidian 1.11.4 起宿主运行时支持 ES2020；原生可选链/空值合并
+	// 免去 es2018 转译辅助代码（实测 main.js 约 -2.9%）。
+	target: "es2020",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
