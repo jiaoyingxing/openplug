@@ -79,6 +79,20 @@
 	min-width: 0;
 }
 
+/* 直搜时的排序单选：占用「分类筛选」的同一个顶部行槽位（两者互斥显示）。 */
+.openplug-search-sort {
+	flex: 0 0 auto;
+}
+
+.openplug-search-sort.is-hidden,
+.openplug-store-add-host.is-hidden {
+	display: none;
+}
+
+.openplug-search-sort select {
+	width: auto;
+}
+
 .openplug-body {
 	display: block;
 }
@@ -348,7 +362,9 @@
 	text-align: center;
 }
 
-.openplug-store-pager {
+/* 翻页条：商店结果与主页「插件更新」共用（src/pager.ts）。页码与禁用态
+   由调用方按各自数据源落笔，样式只维护呈现。 */
+.openplug-pager {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -360,11 +376,11 @@
 	font-size: var(--font-ui-smaller);
 }
 
-.openplug-store-pager.is-hidden {
+.openplug-pager.is-hidden {
 	display: none;
 }
 
-.openplug-store-pager-btn {
+.openplug-pager-btn {
 	min-height: 28px;
 	padding: 4px 8px;
 	border: none;
@@ -374,7 +390,7 @@
 	cursor: pointer;
 }
 
-.openplug-store-pager-btn:disabled {
+.openplug-pager-btn:disabled {
 	color: var(--text-faint);
 	cursor: default;
 }
@@ -387,11 +403,11 @@ body.is-phone .openplug-store-chip {
 	min-height: 28px;
 }
 
-body.is-phone .openplug-store-pager {
+body.is-phone .openplug-pager {
 	flex-wrap: wrap;
 }
 
-body.is-phone .openplug-store-pager-btn {
+body.is-phone .openplug-pager-btn {
 	min-height: 32px;
 	padding: 6px 10px;
 }
@@ -429,10 +445,14 @@ body.is-phone .openplug-store-pager-btn {
 }
 
 /* 主页底部：已安装插件更新卡（2026-08-30 用户确认布局——更新板块在
-   最下面，注句并入使用方式卡） */
+   最下面，注句并入使用方式卡）。2026-10-25 起「作者精选」复用同一张
+   板块卡与行样式（用户要求列表结构 + 安装按钮向更新板块对齐）；标题
+   同样在壳外，故卡内不放标题。 */
 .openplug-updates {
 	margin-top: var(--size-4-3);
 	padding: var(--size-4-3);
+	/* 翻页后滚回板块顶部：与 .openplug-store-anchor 同值 */
+	scroll-margin-top: 60px;
 }
 
 .openplug-updates-status {
@@ -481,7 +501,9 @@ body.is-phone .openplug-store-pager-btn {
 	color: var(--text-muted);
 }
 
-.openplug-update-btn {
+/* 行内动作按钮（更新 / 精选安装）不参与收缩，保持右侧固定位。 */
+.openplug-update-btn,
+.openplug-pick-btn {
 	flex: 0 0 auto;
 }
 

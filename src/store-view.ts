@@ -6,6 +6,7 @@ import {
 	setIcon,
 } from "obsidian";
 
+import { createPager, PagerHandle } from "./pager";
 import { getPresetTranslation } from "./preset-translations";
 import {
 	buildDefaultCategoryOptions,
@@ -52,10 +53,7 @@ export class StoreSection {
 	private chipsEl: HTMLElement | null = null;
 	private statusEl: HTMLElement | null = null;
 	private listEl: HTMLElement | null = null;
-	private pagerEl: HTMLElement | null = null;
-	private pageInfoEl: HTMLElement | null = null;
-	private prevBtn: HTMLButtonElement | null = null;
-	private nextBtn: HTMLButtonElement | null = null;
+	private pager: PagerHandle | null = null;
 
 	constructor(
 		app: App,
@@ -204,19 +202,11 @@ export class StoreSection {
 		this.statusEl = card.createDiv({ cls: "openplug-store-status is-hidden" });
 		this.listEl = card.createDiv({ cls: "openplug-store-list is-hidden" });
 
-		const pager = card.createDiv({ cls: "openplug-store-pager is-hidden" });
-		this.prevBtn = pager.createEl("button", {
-			cls: "openplug-store-pager-btn",
-			text: "上一页",
-		});
-		this.pageInfoEl = pager.createSpan({ cls: "openplug-store-pager-info" });
-		this.nextBtn = pager.createEl("button", {
-			cls: "openplug-store-pager-btn",
-			text: "下一页",
-		});
-		this.prevBtn.addEventListener("click", () => this.changePage(-1));
-		this.nextBtn.addEventListener("click", () => this.changePage(1));
-		this.pagerEl = pager;
+		this.pager = createPager(
+			card,
+			() => this.changePage(-1),
+			() => this.changePage(1),
+		);
 	}
 
 	private openCategoryModal(): void {
@@ -241,7 +231,7 @@ export class StoreSection {
 		this.loading = false;
 		this.statusEl?.addClass("is-hidden");
 		this.statusEl?.empty();
-		this.pagerEl?.addClass("is-hidden");
+		this.pager?.hide();
 		this.listEl?.empty();
 		this.lastResult = null;
 		this.lastResultKey = "";
@@ -279,7 +269,7 @@ export class StoreSection {
 		this.setStatus("正在加载插件…");
 		this.listEl?.empty();
 		this.listEl?.addClass("is-hidden");
-		this.pagerEl?.addClass("is-hidden");
+		this.pager?.hide();
 		const key = this.currentKey();
 		try {
 			const result = await fetchStorePage(
@@ -317,7 +307,7 @@ export class StoreSection {
 	private renderError(message: string, retry = true): void {
 		this.listEl?.empty();
 		this.listEl?.addClass("is-hidden");
-		this.pagerEl?.addClass("is-hidden");
+		this.pager?.hide();
 		const el = this.statusEl;
 		if (!el) {
 			return;
@@ -359,7 +349,7 @@ export class StoreSection {
 				cls: "openplug-store-empty",
 				text: "这个分类下暂时没有插件。",
 			});
-			this.pagerEl?.addClass("is-hidden");
+			this.pager?.hide();
 			return;
 		}
 		for (const hit of result.hits) {
@@ -368,7 +358,7 @@ export class StoreSection {
 				this.renderRow(list, doc);
 			}
 		}
-		this.renderPager(pages);
+		this.pager?.setPage(this.page, pages);
 	}
 
 	private renderRow(list: HTMLElement, doc: StoreHitDocument): void {
@@ -427,21 +417,6 @@ export class StoreSection {
 				open();
 			}
 		});
-	}
-
-	private renderPager(pages: number): void {
-		const pager = this.pagerEl;
-		if (!pager || !this.pageInfoEl || !this.prevBtn || !this.nextBtn) {
-			return;
-		}
-		if (pages <= 1) {
-			pager.addClass("is-hidden");
-			return;
-		}
-		pager.removeClass("is-hidden");
-		this.pageInfoEl.setText(`第 ${this.page} / ${pages} 页`);
-		this.prevBtn.disabled = this.page <= 1;
-		this.nextBtn.disabled = this.page >= pages;
 	}
 
 	private changePage(delta: number): void {

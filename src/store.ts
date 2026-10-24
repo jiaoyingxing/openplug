@@ -113,6 +113,9 @@ export type StoreSort = "downloads" | "updated" | "name";
 export interface StoreDetailMeta {
 	downloads: string;
 	updated: string;
+	/** 原始值只给直搜排序用；界面展示仍走上面两条格式化文本。 */
+	downloadsValue?: number;
+	updatedValue?: string;
 }
 
 export interface CategoryOption {
@@ -341,6 +344,9 @@ export async function fetchStoreMetaForQuery(
 					? formatDownloads(doc.downloads)
 					: "",
 			updated: formatUpdated(doc.latest_release_at),
+			downloadsValue:
+				typeof doc.downloads === "number" ? doc.downloads : undefined,
+			updatedValue: doc.latest_release_at,
 		});
 	}
 	if (metaCache.size >= META_CACHE_MAX) {

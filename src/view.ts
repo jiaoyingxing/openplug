@@ -1,7 +1,14 @@
 import { ItemView, Notice, SearchComponent, setIcon } from "obsidian";
 
 import { VIEW_TYPE_PICKER } from "./consts";
+import { createPager, PagerHandle } from "./pager";
 import { getPresetTranslation } from "./preset-translations";
+import {
+	compareSearchHit,
+	SearchSort,
+	searchHitRank,
+	sortSearchHits,
+} from "./search-rank";
 import { fetchStoreMetaForQuery, StoreDetailMeta } from "./store";
 import { StoreSection } from "./store-view";
 import { translateTextCached } from "./translate";
@@ -30,7 +37,48 @@ type SearchKind = "plugin" | "theme";
 /** 搜索输入防抖：避免逐字重渲染与重复请求。 */
 const SEARCH_DEBOUNCE_MS = 250;
 
+/** 更新列表每页条数：行含名称 + 作者 + 版本，单页 5 条保持板块紧凑
+ * （2026-10-25 用户要求复用商店翻页结构，单页 5-6 条）。 */
+const UPDATES_PAGE_SIZE = 5;
+
+/** 本插件自身的官方清单 id：它出现在更新列表里时固定排在最前
+ * （2026-10-25 用户要求）。 */
+const SELF_PLUGIN_ID = "openplug";
+
 type BannerState = "is-loading" | "is-success" | "is-error";
+
+/** 主页「作者精选」条目：只给官方清单 id 与用户给定的名称/介绍，版本、
+ * 作者等元数据不展示；安装走官方清单 + 现役安装主链。 */
+interface AuthorPick {
+	id: string;
+	name: string;
+	desc: string;
+}
+
+/** 主页「作者精选」常驻推荐（2026-10-25 用户给定文稿，文案不改写）。
+ * 已安装的条目由 renderAuthorPicks 过滤，不在版面出现。 */
+const AUTHOR_PICKS: ReadonlyArray<AuthorPick> = [
+	{
+		id: "obsidian-importer",
+		name: "Importer",
+		desc: "Obsidian 官方推出的笔记迁移工具，轻松将 Notion、OneNote、Bear（熊掌记）、Evernote（印象笔记）、Apple Notes（iOS 备忘录）等主流笔记平台的数据完整迁移到 Obsidian 知识库。",
+	},
+	{
+		id: "easy-sync",
+		name: "EasySync",
+		desc: "在电脑、手机和平板之间轻松同步 Obsidian 仓库。具备冲突识别、进度可视化、云端回收站、历史版本、自动同步等功能，支持同步插件。不设服务器，无需复杂配置，登录 OneDrive 直接同步。",
+	},
+	{
+		id: "resojot",
+		name: "Resojot",
+		desc: "在 Obsidian 里轻松完成录音、转写和整理，让语音内容更快变成可查、可用的笔记。会议、课堂、奇思妙想，一键录好，随时翻找。",
+	},
+	{
+		id: "yolo",
+		name: "YOLO",
+		desc: "完整的 Agent 体验。不止回答问题。YOLO 能理解并操作你的笔记仓库，调用工具与 MCP，并通过 Skills 按你的方式完成任务。桌面端还能一键切到你已登录的受支持 CLI Agent（Codex/Claude Code），让它直接在仓库里工作。",
+	},
+];
 
 /** 顶部状态行句柄：并发操作各占一行、互不覆盖；close() 移除该行。 */
 interface BannerLine {
@@ -44,6 +92,15 @@ interface SearchResult {
 	name: string;
 	author: string;
 	desc: string;
+	/** 命中档位：越小越"硬"（0 名称全等 … 5 仅简介命中）。 */
+	rank: number;
+}
+
+/** 一行直搜结果：行元素 + 元数据行元素（主题没有元数据行），供排序后原位重排。 */
+interface SearchRow {
+	result: SearchResult;
+	el: HTMLElement;
+	metaEl: HTMLElement | null;
 }
 
 export class OpenplugPickerView extends ItemView {
@@ -65,6 +122,24 @@ export class OpenplugPickerView extends ItemView {
 	private static readonly UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
 	/** 主页重建竞态序号：搜索/关闭等动作重建主页后，旧检测结果不得写 DOM。 */
 	private updatesSeq = 0;
+	/** 更新板块结果壳：行区 + 常驻翻页条；翻页只重绘行区（焦点不丢）。 */
+	private updatesShell: {
+		section: HTMLElement;
+		list: HTMLElement;
+		pager: PagerHandle;
+	} | null = null;
+	/** 本轮检测结果与当前页：更新成功即从结果集移除并重绘，页码随条数收敛。 */
+	private updatesData: PluginUpdateEntry[] = [];
+	private updatesFailed = 0;
+	private updatesPage = 1;
+	/** 「作者精选」重建竞态序号：主页重建后旧的已安装判定不得写 DOM。 */
+	private picksSeq = 0;
+	/** 直搜排序单选：与分类筛选的排序同一组选项，只在搜索态占据顶部行右侧。 */
+	private searchSort: SearchSort = "downloads";
+	private searchSortHost: HTMLElement | null = null;
+	private searchSortEl: HTMLSelectElement | null = null;
+	/** 最近一次搜索的官方元数据（按查询词）：有缓存时排序可同步生效，不必先按相关度再跳。 */
+	private searchMetaCache: { query: string; metas: Map<string, StoreDetailMeta> } | null = null;
 
 	getViewType(): string {
 		return VIEW_TYPE_PICKER;
@@ -93,11 +168,15 @@ export class OpenplugPickerView extends ItemView {
 		}
 		this.storeSection?.dispose();
 		this.storeSection = null;
+		this.updatesShell = null;
 		this.contentEl.empty();
 		this.rootEl = null;
 		this.searchEl = null;
 		this.searchComponent = null;
 		this.storeAddHost = null;
+		this.searchSortHost = null;
+		this.searchSortEl = null;
+		this.searchMetaCache = null;
 		this.bodyEl = null;
 	}
 
@@ -125,6 +204,28 @@ export class OpenplugPickerView extends ItemView {
 			}, SEARCH_DEBOUNCE_MS);
 		});
 		this.storeAddHost = topRow.createDiv();
+		// 直搜与分类筛选互斥：同一个右侧槽位，搜索时有字就换成排序单选
+		// （2026-10-25 用户定；选项与分类筛选的排序同一组）。
+		this.searchSortHost = topRow.createDiv({
+			cls: "openplug-search-sort is-hidden",
+		});
+		const sortEl = this.searchSortHost.createEl("select", {
+			cls: "dropdown",
+			attr: { "aria-label": "排序" },
+		});
+		for (const [value, label] of [
+			["downloads", "热门"],
+			["updated", "最近更新"],
+			["name", "名称"],
+		] as const) {
+			sortEl.createEl("option", { value, text: label });
+		}
+		sortEl.value = this.searchSort;
+		sortEl.addEventListener("change", () => {
+			this.searchSort = sortEl.value as SearchSort;
+			void this.onSearchInput();
+		});
+		this.searchSortEl = sortEl;
 		this.bannerEl = topbar.createDiv({ cls: "openplug-banner is-hidden" });
 		this.bodyEl = this.rootEl.createDiv({ cls: "openplug-body" });
 	}
@@ -236,6 +337,9 @@ export class OpenplugPickerView extends ItemView {
 		wrap.createDiv({ cls: "openplug-heading", text: "插件更新" });
 		const updatesEl = wrap.createDiv({ cls: "openplug-updates" });
 		void this.checkAndRenderUpdates(updatesEl);
+		// 「作者精选」放在「插件更新」之后：常驻推荐，已安装的条目不出现
+		// （全部已安装则标题与卡一起不出现）；已安装判定完成后才落笔。
+		void this.renderAuthorPicks(wrap);
 	}
 
 	private ensureLists(): Promise<void> {
@@ -304,11 +408,13 @@ export class OpenplugPickerView extends ItemView {
 		}
 		if (!q) {
 			this.storeSection?.setSearchActive(false);
+			this.setSearchChrome(false);
 			body.empty();
 			this.renderEmptyState(body);
 			return;
 		}
 		this.storeSection?.setSearchActive(true);
+		this.setSearchChrome(true);
 		if (!this.listCache || !this.themeListCache) {
 			body.empty();
 			// 列表加载的临时文本并入顶部状态行（2026-08-30 用户要求
@@ -323,48 +429,64 @@ export class OpenplugPickerView extends ItemView {
 			}
 			line.close();
 		}
-		const results: SearchResult[] = [];
+		const hits: SearchResult[] = [];
 		if (this.listCache) {
 			for (const e of this.listCache) {
-				if (
-					e.name.toLowerCase().includes(q) ||
-					e.description.toLowerCase().includes(q) ||
-					e.author.toLowerCase().includes(q) ||
-					e.id.toLowerCase().includes(q)
-				) {
-					results.push({
+				const rank = searchHitRank(
+					e.name.toLowerCase(),
+					e.author.toLowerCase(),
+					e.id.toLowerCase(),
+					e.description.toLowerCase(),
+					q,
+				);
+				if (rank >= 0) {
+					hits.push({
 						kind: "plugin",
 						id: e.id,
 						name: e.name,
 						author: e.author,
 						desc: e.description,
+						rank,
 					});
 				}
 			}
 		}
 		if (this.themeListCache) {
 			for (const e of this.themeListCache) {
-				if (
-					e.name.toLowerCase().includes(q) ||
-					e.author.toLowerCase().includes(q) ||
-					e.repo.toLowerCase().includes(q)
-				) {
-					results.push({
+				const rank = searchHitRank(
+					e.name.toLowerCase(),
+					e.author.toLowerCase(),
+					e.repo.toLowerCase(),
+					"",
+					q,
+				);
+				if (rank >= 0) {
+					hits.push({
 						kind: "theme",
 						id: e.name,
 						name: e.name,
 						author: e.author,
 						desc: e.repo,
+						rank,
 					});
 				}
 			}
 		}
+		// 初始次序 = 相关度（档位 → 名称长度 → 名称序），插件在前、主题在后；
+		// 再按顶部排序单选改写组内次序（元数据未到位时先按相关度，回来后再重排）。
+		const relevant = [
+			...hits.filter((r) => r.kind === "plugin").sort(compareSearchHit),
+			...hits.filter((r) => r.kind === "theme").sort(compareSearchHit),
+		];
+		const cachedMetas =
+			this.searchMetaCache?.query === q ? this.searchMetaCache.metas : null;
+		const results = this.orderSearchResults(relevant, cachedMetas);
 		body.empty();
 		if (results.length === 0) {
 			body.createEl("p", { text: "未找到匹配的插件或主题。", cls: "openplug-muted" });
 			return;
 		}
-		const metaRows: Array<{ id: string; el: HTMLElement; author: string }> = [];
+		const rows: SearchRow[] = [];
 		for (const r of results.slice(0, 50)) {
 			const row = body.createDiv({ cls: "openplug-result" });
 			const titleRow = row.createDiv({ cls: "openplug-result-head" });
@@ -380,13 +502,14 @@ export class OpenplugPickerView extends ItemView {
 					text: r.author,
 					cls: "openplug-result-desc",
 				});
-				metaRows.push({ id: r.id, el: metaLine, author: r.author });
+				rows.push({ result: r, el: row, metaEl: metaLine });
 				row.createDiv({ text: r.desc, cls: "openplug-result-desc" });
 			} else {
 				row.createDiv({
 					text: `${r.author} · ${r.desc}`,
 					cls: "openplug-result-desc",
 				});
+				rows.push({ result: r, el: row, metaEl: null });
 			}
 			if (r.kind === "plugin") {
 				const preset = getPresetTranslation(r.id);
@@ -405,15 +528,40 @@ export class OpenplugPickerView extends ItemView {
 				}
 			});
 		}
-		if (metaRows.length > 0) {
-			void this.enrichSearchMeta(q, metaRows);
+		if (rows.length > 0) {
+			void this.enrichSearchMeta(q, rows);
 		}
+	}
+
+	/** 直搜态顶部行：直搜与分类筛选互斥，同一个槽位在「分类筛选」与排序单选之间切换。 */
+	private setSearchChrome(active: boolean): void {
+		this.storeAddHost?.toggleClass("is-hidden", active);
+		this.searchSortHost?.toggleClass("is-hidden", !active);
+	}
+
+	/** 直搜排序：插件、主题分组内各自排，不互相穿插；热门/最近更新用官方元数据，
+	 * 缺数据的排最后并保留相关度次序。 */
+	private orderSearchResults(
+		results: SearchResult[],
+		metas: Map<string, StoreDetailMeta> | null,
+	): SearchResult[] {
+		const statOf = (r: SearchResult): { downloads?: number; updated?: string } => {
+			const meta = metas?.get(r.id);
+			return { downloads: meta?.downloadsValue, updated: meta?.updatedValue };
+		};
+		const byKind = (kind: SearchKind): SearchResult[] =>
+			sortSearchHits(
+				results.filter((r) => r.kind === kind),
+				this.searchSort,
+				statOf,
+			);
+		return [...byKind("plugin"), ...byKind("theme")];
 	}
 
 	/** 顶部搜索行回填官方下载量/上次更新：一次查询批量按 slug 匹配；失败静默。 */
 	private async enrichSearchMeta(
 		query: string,
-		rows: Array<{ id: string; el: HTMLElement; author: string }>,
+		rows: SearchRow[],
 	): Promise<void> {
 		let metas: Map<string, StoreDetailMeta>;
 		try {
@@ -421,19 +569,37 @@ export class OpenplugPickerView extends ItemView {
 		} catch {
 			return;
 		}
+		this.searchMetaCache = { query, metas };
 		for (const row of rows) {
-			const meta = metas.get(row.id);
-			if (!meta || !row.el.isConnected) {
+			const meta = metas.get(row.result.id);
+			if (!meta || !row.metaEl?.isConnected) {
 				continue;
 			}
-			const parts = [row.author];
+			const parts = [row.result.author];
 			if (meta.downloads) {
 				parts.push(`${meta.downloads}次下载`);
 			}
 			if (meta.updated) {
 				parts.push(`上次更新 ${meta.updated}`);
 			}
-			row.el.setText(parts.join(" · "));
+			row.metaEl.setText(parts.join(" · "));
+		}
+		// 热门/最近更新：元数据到位后原位重排（名称排序在渲染时已排好，无需再动）。
+		const list = this.bodyEl;
+		const stillSameQuery =
+			(this.searchEl?.value ?? "").trim().toLowerCase() === query;
+		if (this.searchSort === "name" || !list || !stillSameQuery) {
+			return;
+		}
+		const elOf = new Map(rows.map((r) => [r.result, r.el] as const));
+		for (const result of this.orderSearchResults(
+			rows.map((r) => r.result),
+			metas,
+		)) {
+			const el = elOf.get(result);
+			if (el?.isConnected) {
+				list.append(el);
+			}
 		}
 	}
 
@@ -650,6 +816,7 @@ export class OpenplugPickerView extends ItemView {
 		resetUpdateCheckSourceProbe();
 		// 先落「检查中」状态行：官方清单加载可能较慢，避免板块空白
 		// （2026-08-31 用户要求：无内容时区块不得只剩空壳）。
+		this.updatesShell = null;
 		section.empty();
 		section.createDiv({
 			cls: "openplug-updates-status",
@@ -770,7 +937,7 @@ export class OpenplugPickerView extends ItemView {
 		return result;
 	}
 
-	/** 渲染检测结果：有更新 → 逐行（名称/作者/版本 + 更新按钮）；
+	/** 渲染检测结果：有更新 → 按页逐行（名称/作者/版本 + 更新按钮）；
 	 * 无更新 → 「目前没有需要更新的插件。」；单项失败 → 失败统计行。
 	 * 标题在壳外（renderEmptyState 创建，不在卡内）。 */
 	private renderUpdatesResult(
@@ -778,46 +945,103 @@ export class OpenplugPickerView extends ItemView {
 		updates: PluginUpdateEntry[],
 		failedCount: number,
 	): void {
+		// 自身（OpenPlug）有新版本时置顶，其余保持检测顺序：比较只看是否
+		// 自身，sort 稳定，分页、逐条更新与重绘都沿用这一顺序。
+		this.updatesData = updates
+			.slice()
+			.sort(
+				(a, b) =>
+					Number(a.id !== SELF_PLUGIN_ID) - Number(b.id !== SELF_PLUGIN_ID),
+			);
+		this.updatesFailed = failedCount;
+		this.updatesPage = 1;
 		section.empty();
-		if (updates.length === 0) {
-			section.createDiv({
+		const list = section.createDiv({ cls: "openplug-updates-list" });
+		const pager = createPager(
+			section,
+			() => this.changeUpdatesPage(-1),
+			() => this.changeUpdatesPage(1),
+		);
+		this.updatesShell = { section, list, pager };
+		this.renderUpdatesPage();
+	}
+
+	/** 按当前页重绘行区。翻页条常驻、只改页码与按钮状态（键盘翻页不丢焦点）；
+	 * 更新成功移除条目后也走这里——末页减空时页码自动回收到有内容的页。 */
+	private renderUpdatesPage(): void {
+		const shell = this.updatesShell;
+		if (!shell) {
+			return;
+		}
+		const { list, pager } = shell;
+		list.empty();
+		if (this.updatesData.length === 0) {
+			pager.hide();
+			list.createDiv({
 				cls: "openplug-updates-status",
 				text:
-					failedCount === 0
+					this.updatesFailed === 0
 						? "目前没有需要更新的插件。"
-						: `检查不完整：${failedCount} 个插件检查失败，已跳过。`,
+						: `检查不完整：${this.updatesFailed} 个插件检查失败，已跳过。`,
 			});
 			return;
 		}
-		for (const u of updates) {
-			const row = section.createDiv({ cls: "openplug-update-row" });
-			const info = row.createDiv({ cls: "openplug-update-info" });
-			info.createDiv({ cls: "openplug-update-name", text: u.name });
-			// 复用详情页 addMetaLine（版本：（已安装：）+ 作者），与详情卡同构
-			// （样式行级覆盖见 .openplug-update-row .openplug-metaline）。
-			if (u.author) {
-				this.addMetaLine(info, "作者", u.author);
-			}
-			this.addMetaLine(
-				info,
-				"版本",
-				`${u.latestVersion}（已安装：${u.installedVersion}）`,
-			);
-			const btn = row.createEl("button", {
-				text: "更新",
-				cls: "openplug-update-btn",
-			});
-			btn.setAttribute("aria-label", `更新 ${u.name} 到 ${u.latestVersion}`);
-			btn.addEventListener("click", () => {
-				void this.installUpdate(btn, u);
-			});
+		const pages = Math.max(
+			1,
+			Math.ceil(this.updatesData.length / UPDATES_PAGE_SIZE),
+		);
+		this.updatesPage = Math.min(this.updatesPage, pages);
+		const from = (this.updatesPage - 1) * UPDATES_PAGE_SIZE;
+		for (const u of this.updatesData.slice(from, from + UPDATES_PAGE_SIZE)) {
+			this.renderUpdateRow(list, u);
 		}
-		if (failedCount > 0) {
-			section.createDiv({
+		if (this.updatesFailed > 0) {
+			list.createDiv({
 				cls: "openplug-updates-status",
-				text: `${failedCount} 个插件检查失败，已跳过。`,
+				text: `${this.updatesFailed} 个插件检查失败，已跳过。`,
 			});
 		}
+		pager.setPage(this.updatesPage, pages);
+	}
+
+	/** 单行：名称 / 作者 / 版本 + 行内更新按钮（复用详情页 meta 行）。 */
+	private renderUpdateRow(list: HTMLElement, u: PluginUpdateEntry): void {
+		const row = list.createDiv({ cls: "openplug-update-row" });
+		const info = row.createDiv({ cls: "openplug-update-info" });
+		info.createDiv({ cls: "openplug-update-name", text: u.name });
+		// 复用详情页 addMetaLine（版本：（已安装：）+ 作者），与详情卡同构
+		// （样式行级覆盖见 .openplug-update-row .openplug-metaline）。
+		if (u.author) {
+			this.addMetaLine(info, "作者", u.author);
+		}
+		this.addMetaLine(
+			info,
+			"版本",
+			`${u.latestVersion}（已安装：${u.installedVersion}）`,
+		);
+		const btn = row.createEl("button", {
+			text: "更新",
+			cls: "openplug-update-btn",
+		});
+		btn.setAttribute("aria-label", `更新 ${u.name} 到 ${u.latestVersion}`);
+		btn.addEventListener("click", () => {
+			void this.installUpdate(btn, u);
+		});
+	}
+
+	/** 翻页：只切本地结果集，不重新检查；滚回板块顶部（与商店翻页一致）。 */
+	private changeUpdatesPage(delta: number): void {
+		const pages = Math.max(
+			1,
+			Math.ceil(this.updatesData.length / UPDATES_PAGE_SIZE),
+		);
+		const next = Math.min(pages, Math.max(1, this.updatesPage + delta));
+		if (next === this.updatesPage) {
+			return;
+		}
+		this.updatesPage = next;
+		this.updatesShell?.section.scrollIntoView({ block: "start" });
+		this.renderUpdatesPage();
 	}
 
 	/** 整体检查失败态：提示 + 重试按钮。 */
@@ -876,24 +1100,94 @@ export class OpenplugPickerView extends ItemView {
 				`更新完成：${u.name} 已安装 ${u.latestVersion}，重启 Obsidian 后生效。`,
 				"is-success",
 			);
-			// 行成功即移除；若这是最后一行且板块内已无任何提示行，补「无
-			// 更新」占位，避免板块只剩空壳（2026-08-31 用户要求）。
-			// 注意：先取板块引用再移除行——remove() 后按钮已脱离文档，
-			// closest() 会返回 null（2026-08-31 实测抓到的顺序 bug）。
-			const updatesSection = btn.closest(".openplug-updates");
-			btn.closest(".openplug-update-row")?.remove();
-			if (
-				updatesSection &&
-				!updatesSection.querySelector(".openplug-update-row") &&
-				!updatesSection.querySelector(".openplug-updates-status")
-			) {
-				updatesSection.createDiv({
-					cls: "openplug-updates-status",
-					text: "目前没有需要更新的插件。",
-				});
-			}
+			// 成功即从本轮结果集移除并按当前页重绘：分页后不能只 remove 一行
+			// （会留下整页行 + 过期页码），末页减空时由重绘回收到有内容的页；
+			// 全部更新完则落「目前没有需要更新的插件。」（2026-08-31 空态）。
+			// 已离开主页/重开检测时壳体已被换成 null，重绘不写旧 DOM。
+			this.updatesData = this.updatesData.filter((entry) => entry.id !== u.id);
+			this.renderUpdatesPage();
 		} catch (e) {
 			line.update(`更新失败：${String(e)}`, "is-error");
+			btn.disabled = false;
+		}
+	}
+
+	/**
+	 * 主页「作者精选」：常驻推荐位，只列尚未安装的条目（用户要求：已安装
+	 * 再推荐即噪音）；全部已安装时标题与卡一起不出现，不留空壳。行结构 =
+	 * 名称 + 一句介绍 + 安装按钮，样式复用「插件更新」（同一板块卡、行
+	 * 节奏与右侧动作位）。已安装判定为本地读，完成后才落笔标题与卡。
+	 */
+	private async renderAuthorPicks(host: HTMLElement): Promise<void> {
+		const seq = ++this.picksSeq;
+		const installed = new Set(
+			(await this.enumerateInstalledPlugins()).map((i) => i.id),
+		);
+		if (seq !== this.picksSeq) {
+			return;
+		}
+		const picks = AUTHOR_PICKS.filter((p) => !installed.has(p.id));
+		if (picks.length === 0) {
+			return;
+		}
+		const heading = host.createDiv({ cls: "openplug-heading", text: "作者精选" });
+		const section = host.createDiv({ cls: "openplug-updates" });
+		for (const pick of picks) {
+			const row = section.createDiv({ cls: "openplug-update-row" });
+			const info = row.createDiv({ cls: "openplug-update-info" });
+			info.createDiv({ cls: "openplug-update-name", text: pick.name });
+			info.createDiv({ cls: "openplug-result-desc", text: pick.desc });
+			const btn = row.createEl("button", {
+				text: "安装",
+				cls: "mod-cta openplug-pick-btn",
+			});
+			btn.setAttribute("aria-label", `安装 ${pick.name}`);
+			btn.addEventListener("click", () => {
+				void this.installPick(btn, pick, heading, section);
+			});
+		}
+	}
+
+	/**
+	 * 精选行内安装：复用现役安装主链（官方清单 → 镜像并发抓取 + SHA256
+	 * 校验 → 写入并启用）。精选只列未安装条目，故主链按全新安装自动启用；
+	 * 成功后该行即时移除（已是「已安装」，不再属于推荐），最后一个也算完
+	 * 时标题与卡一起收掉。
+	 */
+	private async installPick(
+		btn: HTMLButtonElement,
+		pick: AuthorPick,
+		heading: HTMLElement,
+		section: HTMLElement,
+	): Promise<void> {
+		btn.disabled = true;
+		const line = this.bannerLine();
+		let done = 0;
+		const progress = (): void => {
+			done += 1;
+			line.update(
+				`正在下载 ${pick.name}（${done}/${INSTALL_TARGET_FILES}）…`,
+				"is-loading",
+			);
+		};
+		line.update(`正在下载 ${pick.name}（0/${INSTALL_TARGET_FILES}）…`, "is-loading");
+		try {
+			if (!this.listCache) {
+				await this.ensureLists();
+			}
+			if (!this.listCache) {
+				throw new Error("官方插件清单加载失败");
+			}
+			const { info } = await fetchPluginInfo(this.listCache, pick.id);
+			await installPlugin(this.app, info, progress);
+			line.update(`完成：${pick.name} 已安装并启用。`, "is-success");
+			btn.parentElement?.remove();
+			if (!section.querySelector(".openplug-update-row")) {
+				heading.remove();
+				section.remove();
+			}
+		} catch (e) {
+			line.update(`安装失败：${String(e)}`, "is-error");
 			btn.disabled = false;
 		}
 	}

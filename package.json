@@ -1,6 +1,6 @@
 {
   "name": "openplug",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Install official Obsidian community plugins via domestic mirror acceleration, without a VPN.",
   "main": "main.js",
   "scripts": {
@@ -12,7 +12,8 @@
     "build:verify": "npm run build && npm run verify:runtime",
     "deploy": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1",
     "lint": "eslint src",
-    "test:update-check": "node ./scripts/update-check-smoke.mjs"
+    "test:update-check": "node ./scripts/update-check-smoke.mjs",
+    "test:search-rank": "node ./scripts/search-rank-smoke.mjs"
   },
   "keywords": [
     "obsidian"
