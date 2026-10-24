@@ -10,6 +10,7 @@ const SHOW_THEME_ACTION = "show-theme";
 /** 桥接管窗口内隐藏官方详情弹层的 body 类（见 styles.css）。 */
 const OPENPLUG_HIDE_MODALS_CLASS = "openplug-hide-modals";
 const OPENPLUG_ANDROID_CLASS = "openplug-android";
+const OPENPLUG_IOS_CLASS = "openplug-ios";
 /** 冷启动后置激活的让位时长：等其它插件（如 Resojot）的默认视图先开完。 */
 const COLD_START_SETTLE_MS = 500;
 /** 冷启动焦点轮询：间隔与最大次数（窗口约 200ms × 8 = 1.6s 内有限重夺）。 */
@@ -115,16 +116,20 @@ export default class OpenplugPlugin extends Plugin {
 
 		this.acquireProtocol();
 
-		// 安卓专属表面兼容开关：宿主 CSS 无安卓平台类，由插件判定后挂 body
-		// 语义类（2026-09-18 用户裁定只对安卓做底色兼容，iOS/桌面不触碰），
-		// 供 styles.css 的 body.openplug-android 规则命中；卸载时摘除。
+		// 移动端亮色表面兼容开关：宿主 CSS 无安卓/iOS 平台类，由插件判定后
+		// 挂 body 语义类，供 styles.css 的亮色回指规则命中；卸载时摘除。
+		// 2026-09-18 用户裁定先只做安卓；2026-10-24 iPhone 1.14 亮色真机复报
+		// 白底白卡（日志 20261024-172042），用户授权扩到 iOS。
 		if (Platform.isAndroidApp) {
 			document.body.classList.add(OPENPLUG_ANDROID_CLASS);
+		}
+		if (Platform.isIosApp) {
+			document.body.classList.add(OPENPLUG_IOS_CLASS);
 		}
 	}
 
 	onunload(): void {
-		document.body.classList.remove(OPENPLUG_ANDROID_CLASS);
+		document.body.classList.remove(OPENPLUG_ANDROID_CLASS, OPENPLUG_IOS_CLASS);
 		const handle = this.bridgeHandle;
 		if (handle && typeof handle.remove === "function") {
 			try {

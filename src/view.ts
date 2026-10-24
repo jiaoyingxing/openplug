@@ -2,7 +2,7 @@ import { ItemView, Notice, SearchComponent, setIcon } from "obsidian";
 
 import { VIEW_TYPE_PICKER } from "./consts";
 import { getPresetTranslation } from "./preset-translations";
-import { StoreDetailMeta } from "./store";
+import { fetchStoreMetaForQuery, StoreDetailMeta } from "./store";
 import { StoreSection } from "./store-view";
 import { translateTextCached } from "./translate";
 import { openExternal } from "./util";
@@ -364,6 +364,7 @@ export class OpenplugPickerView extends ItemView {
 			body.createEl("p", { text: "未找到匹配的插件或主题。", cls: "openplug-muted" });
 			return;
 		}
+		const metaRows: Array<{ id: string; el: HTMLElement; author: string }> = [];
 		for (const r of results.slice(0, 50)) {
 			const row = body.createDiv({ cls: "openplug-result" });
 			const titleRow = row.createDiv({ cls: "openplug-result-head" });
@@ -372,10 +373,21 @@ export class OpenplugPickerView extends ItemView {
 				text: r.kind === "theme" ? "主题" : "插件",
 				cls: "openplug-result-tag",
 			});
-			row.createDiv({
-				text: `${r.author} · ${r.desc}`,
-				cls: "openplug-result-desc",
-			});
+			if (r.kind === "plugin") {
+				// 与商店行同构：作者/下载量/上次更新一行，简介与译文各自成行；
+				// 元数据异步回填，接口不可用时保持仅作者（与旧行为一致）。
+				const metaLine = row.createDiv({
+					text: r.author,
+					cls: "openplug-result-desc",
+				});
+				metaRows.push({ id: r.id, el: metaLine, author: r.author });
+				row.createDiv({ text: r.desc, cls: "openplug-result-desc" });
+			} else {
+				row.createDiv({
+					text: `${r.author} · ${r.desc}`,
+					cls: "openplug-result-desc",
+				});
+			}
 			if (r.kind === "plugin") {
 				const preset = getPresetTranslation(r.id);
 				if (preset) {
@@ -392,6 +404,36 @@ export class OpenplugPickerView extends ItemView {
 					void this.loadTheme(r.id);
 				}
 			});
+		}
+		if (metaRows.length > 0) {
+			void this.enrichSearchMeta(q, metaRows);
+		}
+	}
+
+	/** 顶部搜索行回填官方下载量/上次更新：一次查询批量按 slug 匹配；失败静默。 */
+	private async enrichSearchMeta(
+		query: string,
+		rows: Array<{ id: string; el: HTMLElement; author: string }>,
+	): Promise<void> {
+		let metas: Map<string, StoreDetailMeta>;
+		try {
+			metas = await fetchStoreMetaForQuery(query);
+		} catch {
+			return;
+		}
+		for (const row of rows) {
+			const meta = metas.get(row.id);
+			if (!meta || !row.el.isConnected) {
+				continue;
+			}
+			const parts = [row.author];
+			if (meta.downloads) {
+				parts.push(`${meta.downloads}次下载`);
+			}
+			if (meta.updated) {
+				parts.push(`上次更新 ${meta.updated}`);
+			}
+			row.el.setText(parts.join(" · "));
 		}
 	}
 
@@ -413,16 +455,19 @@ export class OpenplugPickerView extends ItemView {
 			if (!this.listCache) {
 				throw new Error("官方插件清单加载失败");
 			}
-			const { info, mirror } = await fetchPluginInfo(this.listCache, pluginId);
-			this.renderInfoCard(root, info, mirror, meta);
-			line.close();
-			const actions = root.createDiv({ cls: "openplug-actions" });
-			this.renderVersion(actions, info);
-			this.renderActions(actions, info);
-		} catch (e) {
-			line.update(`获取失败：${String(e)}`, "is-error");
+		const { info, mirror } = await fetchPluginInfo(this.listCache, pluginId);
+		const card = this.renderInfoCard(root, info, mirror, meta);
+		line.close();
+		const actions = root.createDiv({ cls: "openplug-actions" });
+		this.renderVersion(actions, info);
+		this.renderActions(actions, info);
+		if (!meta) {
+			void this.patchStoreMeta(card, info);
 		}
+	} catch (e) {
+		line.update(`获取失败：${String(e)}`, "is-error");
 	}
+}
 
 	async loadTheme(themeName: string): Promise<void> {
 		this.ensureLayout();
@@ -458,14 +503,18 @@ export class OpenplugPickerView extends ItemView {
 		info: PluginInfo,
 		mirror: { label: string; prefix: string },
 		meta?: StoreDetailMeta,
-	): void {
+	): { metaGroup: HTMLElement; idLine: HTMLElement } {
 		const card = container.createDiv({ cls: "openplug-infocard" });
 		this.addCloseButton(card);
 		const titleGroup = card.createDiv({ cls: "openplug-group" });
 		titleGroup.createEl("h3", { text: info.name, cls: "openplug-title" });
 		const metaGroup = card.createDiv({ cls: "openplug-group" });
 		if (info.version) {
-			const valueEl = this.addMetaLine(metaGroup, "版本", info.version);
+			const { value: valueEl } = this.addMetaLine(
+				metaGroup,
+				"版本",
+				info.version,
+			);
 			void this.annotateInstalledVersion(valueEl, info.version, info.id);
 		}
 		if (info.author) {
@@ -477,7 +526,7 @@ export class OpenplugPickerView extends ItemView {
 		if (meta?.updated) {
 			this.addMetaLine(metaGroup, "上次更新", meta.updated);
 		}
-		this.addMetaLine(metaGroup, "ID", info.id);
+		const idLine = this.addMetaLine(metaGroup, "ID", info.id).line;
 		const compat = this.buildCompatLine(info);
 		if (compat) {
 			this.addMetaLine(metaGroup, "兼容", compat);
@@ -505,6 +554,43 @@ export class OpenplugPickerView extends ItemView {
 			`${mirror.prefix}https://github.com/${info.repo}/releases`,
 		);
 		this.addSourceLink(links, "源仓库：", info.repo, `https://github.com/${info.repo}`);
+		return { metaGroup, idLine };
+	}
+
+	/**
+	 * 顶部搜索进入详情时补官方元数据：按插件名查官方接口，命中本插件后把
+	 * 「下载量 / 上次更新」插到 ID 行前（与商店路径详情同序）。失败或未命中
+	 * 保持缺省；用户已切走时节点已脱离文档，写入无副作用。
+	 */
+	private async patchStoreMeta(
+		card: { metaGroup: HTMLElement; idLine: HTMLElement },
+		info: PluginInfo,
+	): Promise<void> {
+		try {
+			const metas = await fetchStoreMetaForQuery(info.name);
+			const meta = metas.get(info.id);
+			if (!meta || !card.metaGroup.isConnected) {
+				return;
+			}
+			if (meta.downloads) {
+				this.addMetaLine(
+					card.metaGroup,
+					"下载量",
+					meta.downloads,
+					card.idLine,
+				);
+			}
+			if (meta.updated) {
+				this.addMetaLine(
+					card.metaGroup,
+					"上次更新",
+					meta.updated,
+					card.idLine,
+				);
+			}
+		} catch {
+			// 商店接口不可用或补行失败：保持缺省，不阻塞详情
+		}
 	}
 
 	private renderThemeInfoCard(container: HTMLElement, theme: ThemeListItem): void {
@@ -816,10 +902,20 @@ export class OpenplugPickerView extends ItemView {
 		parent: HTMLElement,
 		label: string,
 		value: string,
-	): HTMLElement {
+		before?: HTMLElement,
+	): { line: HTMLElement; value: HTMLElement } {
 		const line = parent.createDiv({ cls: "openplug-metaline" });
+		if (before) {
+			parent.insertBefore(line, before);
+		}
 		line.createSpan({ cls: "openplug-metaline-label", text: label + "：" });
-		return line.createSpan({ cls: "openplug-metaline-value", text: value });
+		return {
+			line,
+			value: line.createSpan({
+				cls: "openplug-metaline-value",
+				text: value,
+			}),
+		};
 	}
 
 	/**

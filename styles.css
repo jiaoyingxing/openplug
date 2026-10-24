@@ -569,6 +569,23 @@ body.openplug-android:not(.theme-dark) .openplug-banner {
 	);
 }
 
+/* iOS 亮色同机制兼容（2026-10-24 用户授权，取证与候选见日志
+   20261024-172042）：与上方安卓条同根因——移动亮色下宿主 .is-mobile 把
+   表面变量重定义为页面主背景，白底白卡。单独成条而不与安卓条用 :is()
+   合并：老安卓 WebView（Chromium < 88）不识 :is() 会整条丢弃，不能让
+   已验收的安卓修复背上解析兼容风险。取值、亮色限定与安卓条逐字一致。 */
+body.openplug-ios:not(.theme-dark) .openplug-infocard,
+body.openplug-ios:not(.theme-dark) .openplug-actions,
+body.openplug-ios:not(.theme-dark) .openplug-home-card,
+body.openplug-ios:not(.theme-dark) .openplug-updates,
+body.openplug-ios:not(.theme-dark) .openplug-store,
+body.openplug-ios:not(.theme-dark) .openplug-banner {
+	--setting-items-background: var(
+		--background-primary-alt,
+		var(--background-secondary)
+	);
+}
+
 /* 主页顶部：使用方式整体卡（含注句，注句不垫页底） */
 .openplug-home-card {
 	padding: var(--size-4-3);

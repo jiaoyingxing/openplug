@@ -59,7 +59,7 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
 	fonts: { label: "字体", icon: "book-type" },
 	footnotes: { label: "脚注", icon: "asterisk" },
 	formats: { label: "文件格式", icon: "files" },
-	formatting: { label: "文本格式", icon: "heading-1" },
+	formatting: { label: "文字排版", icon: "heading-1" },
 	git: { label: "Git", icon: "git-branch" },
 	graph: { label: "关系图谱", icon: "network" },
 	hotkeys: { label: "快捷键", icon: "keyboard" },
@@ -67,10 +67,10 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
 	icons: { label: "图标", icon: "shapes" },
 	images: { label: "图片", icon: "image" },
 	import: { label: "导入", icon: "download" },
-	integrations: { label: "集成", icon: "openplug-blocks" },
+	integrations: { label: "第三方集成", icon: "openplug-blocks" },
 	interface: { label: "界面", icon: "monitor" },
 	json: { label: "JSON", icon: "braces" },
-	languages: { label: "语言工具", icon: "languages" },
+	languages: { label: "翻译与多语言", icon: "languages" },
 	latex: { label: "LaTeX", icon: "sigma" },
 	links: { label: "链接", icon: "link" },
 	markdown: { label: "Markdown", icon: "file-text" },
@@ -85,7 +85,7 @@ const CATEGORY_META: Record<string, { label: string; icon: string }> = {
 	publishing: { label: "发布", icon: "send" },
 	research: { label: "研究", icon: "microscope" },
 	review: { label: "复习与回顾", icon: "clipboard-check" },
-	rtl: { label: "从右到左", icon: "signpost" },
+	rtl: { label: "RTL 文字支持", icon: "signpost" },
 	science: { label: "科学", icon: "flask-conical" },
 	search: { label: "搜索", icon: "search" },
 	sidebar: { label: "侧边栏", icon: "panel-left" },
@@ -154,6 +154,12 @@ let cachedKey: string | null = null;
 let keyPromise: Promise<string> | null = null;
 let facetsCache: { options: CategoryOption[]; at: number } | null = null;
 let facetsPromise: Promise<CategoryOption[]> | null = null;
+const META_CACHE_TTL_MS = 10 * 60 * 1000;
+const META_CACHE_MAX = 50;
+const metaCache = new Map<
+	string,
+	{ metas: Map<string, StoreDetailMeta>; at: number }
+>();
 
 function getCategoryMeta(slug: string): { label: string; icon: string } {
 	return CATEGORY_META[slug] ?? { label: slug, icon: "tag" };
@@ -297,6 +303,54 @@ export async function fetchStoreFacets(): Promise<CategoryOption[]> {
 		});
 	}
 	return facetsPromise;
+}
+
+/**
+ * 按查询词调官方搜索接口（名称/简介/作者多字段），把命中文档按 slug 归成
+ * 下载量 + 上次更新元数据；顶部搜索行回填与详情卡补行共用。官方接口无按
+ * slug 过滤能力（slug 非索引字段），只能按词检索后按 slug 匹配；结果按词
+ * 缓存 10 分钟，接口失败抛错由调用方降级。
+ */
+export async function fetchStoreMetaForQuery(
+	query: string,
+): Promise<Map<string, StoreDetailMeta>> {
+	const key = query.trim().toLowerCase();
+	if (!key) {
+		return new Map();
+	}
+	const cached = metaCache.get(key);
+	if (cached && Date.now() - cached.at < META_CACHE_TTL_MS) {
+		return cached.metas;
+	}
+	const data = await requestStore({
+		q: key,
+		query_by: "name,short_desc,authors",
+		filter_by: buildFilter([]),
+		per_page: "50",
+		page: "1",
+	});
+	const metas = new Map<string, StoreDetailMeta>();
+	for (const hit of data.hits ?? []) {
+		const doc = hit.document;
+		if (!doc?.slug) {
+			continue;
+		}
+		metas.set(doc.slug, {
+			downloads:
+				typeof doc.downloads === "number"
+					? formatDownloads(doc.downloads)
+					: "",
+			updated: formatUpdated(doc.latest_release_at),
+		});
+	}
+	if (metaCache.size >= META_CACHE_MAX) {
+		const oldest = metaCache.keys().next().value;
+		if (oldest !== undefined) {
+			metaCache.delete(oldest);
+		}
+	}
+	metaCache.set(key, { metas, at: Date.now() });
+	return metas;
 }
 
 export function formatDownloads(downloads: number): string {
