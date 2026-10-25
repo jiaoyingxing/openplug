@@ -15,11 +15,11 @@ import { translateTextCached } from "./translate";
 import { openExternal } from "./util";
 import {
 	compareNumericVersions,
-	fetchLatestStableVersion,
 	fetchPluginInfo,
 	fetchPluginList,
 	fetchThemeList,
 	fetchPickerVersions,
+	fetchUpdateTarget,
 	installPlugin,
 	installTheme,
 	INSTALL_TARGET_FILES,
@@ -675,13 +675,17 @@ export class OpenplugPickerView extends ItemView {
 		const titleGroup = card.createDiv({ cls: "openplug-group" });
 		titleGroup.createEl("h3", { text: info.name, cls: "openplug-title" });
 		const metaGroup = card.createDiv({ cls: "openplug-group" });
-		if (info.version) {
+		if (info.installVersion) {
 			const { value: valueEl } = this.addMetaLine(
 				metaGroup,
 				"版本",
-				info.version,
+				info.installVersion,
 			);
-			void this.annotateInstalledVersion(valueEl, info.version, info.id);
+			void this.annotateInstalledVersion(
+				valueEl,
+				info.installVersion,
+				info.id,
+			);
 		}
 		if (info.author) {
 			this.addMetaLine(metaGroup, "作者", info.author);
@@ -888,7 +892,7 @@ export class OpenplugPickerView extends ItemView {
 		if (cached && now - cached.at < OpenplugPickerView.UPDATE_CACHE_TTL_MS) {
 			latest = cached.latest;
 		} else {
-			latest = await fetchLatestStableVersion(entry.repo);
+			latest = await fetchUpdateTarget(entry.repo, installed.version);
 			if (latest) {
 				this.updateLatestCache.set(installed.id, { latest, at: now });
 			}
@@ -1179,7 +1183,7 @@ export class OpenplugPickerView extends ItemView {
 				throw new Error("官方插件清单加载失败");
 			}
 			const { info } = await fetchPluginInfo(this.listCache, pick.id);
-			await installPlugin(this.app, info, progress);
+			await installPlugin(this.app, info, progress, info.installVersion);
 			line.update(`完成：${pick.name} 已安装并启用。`, "is-success");
 			btn.parentElement?.remove();
 			if (!section.querySelector(".openplug-update-row")) {
@@ -1238,8 +1242,9 @@ export class OpenplugPickerView extends ItemView {
 
 	private buildCompatLine(info: PluginInfo): string | null {
 		const parts: string[] = [];
-		if (info.minAppVersion) {
-			parts.push(`Obsidian ≥ ${info.minAppVersion}`);
+		const minAppVersion = info.installMinAppVersion || info.minAppVersion;
+		if (minAppVersion) {
+			parts.push(`Obsidian ≥ ${minAppVersion}`);
 		}
 		parts.push(info.isDesktopOnly ? "仅支持电脑" : "兼容移动设备");
 		return parts.length > 0 ? parts.join(" ；") : null;
@@ -1254,17 +1259,28 @@ export class OpenplugPickerView extends ItemView {
 		}
 	}
 
+	/** 安装版本下拉：首项 = 本机可装版本（与卡片版本行同源）；其余只列
+	 * 更旧的 tag，避免「最新」被更高但当前宿主装不了的版本夹在中间。 */
 	private renderVersion(parent: HTMLElement, info: PluginInfo): void {
 		parent.createDiv({ cls: "openplug-field-label", text: "安装版本" });
 		const select = parent.createEl("select", { cls: "openplug-select" });
-		select.createEl("option", { value: "", text: `最新 ${info.version}` });
+		select.createEl("option", {
+			value: "",
+			text: `最新 ${info.installVersion}`,
+		});
 		this.versionSelect = select;
 		void fetchPickerVersions(info.repo)
 			.then((tags) => {
 				for (const tag of tags) {
-					if (tag !== info.version) {
-						select.createEl("option", { value: tag, text: tag });
+					if (tag === info.installVersion) {
+						continue;
 					}
+					const newer =
+						compareNumericVersions(tag, info.installVersion);
+					if (newer !== null && newer > 0) {
+						continue;
+					}
+					select.createEl("option", { value: tag, text: tag });
 				}
 			})
 			.catch(() => {});
@@ -1294,7 +1310,8 @@ export class OpenplugPickerView extends ItemView {
 		btn: HTMLButtonElement,
 		info: PluginInfo,
 	): Promise<void> {
-		const version = this.versionSelect?.value || undefined;
+		const picked = this.versionSelect?.value || undefined;
+		const version = picked ?? info.installVersion;
 		btn.disabled = true;
 		const line = this.bannerLine();
 		let done = 0;
@@ -1309,8 +1326,8 @@ export class OpenplugPickerView extends ItemView {
 		try {
 			await installPlugin(this.app, info, progress, version);
 			line.update(
-				version
-					? `完成，已安装 ${version}。`
+				picked
+					? `完成，已安装 ${picked}。`
 					: "完成，可在第三方插件列表中查看。",
 				"is-success",
 			);

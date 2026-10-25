@@ -57,7 +57,7 @@ OpenPlug 接管官网“Add to Obsidian”跳转，基于官方清单完成搜�
 | 官方清单搜索 | 基于官方插件 / 主题清单，支持按名称、作者、ID 搜索，中文界面 |
 | 分类筛选 | 按官方社区分类浏览，多选筛选；显示下载量与上次更新时间（今天/昨天/N天前/N个月前/N年前） |
 | 信息卡与翻译 | 展示版本、作者、ID、兼容性；Top 500 插件简介使用外置预置中文，新插件在详情页机翻兜底（失败回退原文，不阻塞安装） |
-| 版本自选 | 显示插件历史版本，默认安装最新版，也可回退指定版本 |
+| 版本自选 | 显示插件历史版本，默认安装与当前 Obsidian 兼容的最新版，也可回退指定版本 |
 | 多镜像竞速加速 | 多个国内 GitHub 加速镜像并发竞速 + 30 秒超时 + 多镜像 SHA256 交叉校验，单个节点失效自动换源 |
 | 主题安装 | 与插件相同的路径安装官方主题 |
 | 电脑与手机 | Windows / macOS / Linux 与 iOS / Android 均可使用 |
@@ -70,7 +70,7 @@ OpenPlug 接管官网“Add to Obsidian”跳转，基于官方清单完成搜�
 
 - 官方清单：`community-plugins.json` 与 `community-css-themes.json`（用于搜索与跳转解析）。
 - 官方社区目录接口（`community.obsidian.md`）：获取插件分类标签、下载量与上次更新时间；只发送分类 / 排序 / 分页参数，不发送搜索词（顶部搜索仍在本地完成）。
-- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`gh.monlor.com`、`wget.la` —— 用于下载清单、manifest 与插件文件。
+- 国内 GitHub 加速镜像（内置并经过实测验证）：`gh-proxy.com`、`ghfast.top`、`gh.monlor.com`、`wget.la` —— 用于下载清单、manifest、版本兼容表（`versions.json`）与插件文件。
 - jsDelivr 数据接口（`data.jsdelivr.com`）：获取插件版本列表（历史版本下拉与更新检测）；更新检测不可达时，经上述镜像读取 manifest 版本（降级模式，可能漏报仅更新 tag 未更新 manifest 的插件）。
 - GitHub tags API（`api.github.com`）：仅在 jsDelivr 版本列表不可达时，为详情历史版本下拉做单次兜底；同一插件缓存 10 分钟。
 - 预置简翻数据（公开插件简介，非用户数据）：`raw.githubusercontent.com`。

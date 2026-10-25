@@ -1,11 +1,15 @@
-import { App, requestUrl } from "obsidian";
+import { apiVersion, App, requestUrl } from "obsidian";
 
 import { PROBE_TIMEOUT_MS, REQUEST_TIMEOUT_MS, withTimeout } from "./util";
 import {
+	compareNumericVersions,
 	isStableVersion,
 	parseJsDelivrVersionList,
 	parseManifestVersion,
+	parseVersionRequirements,
 	pickLatestStableVersion,
+	pickUpdateTarget,
+	resolveInstallableVersion,
 } from "./update-check";
 
 export { compareNumericVersions } from "./update-check";
@@ -46,9 +50,27 @@ const pickerVersionsCache = new Map<
 	{ versions: string[]; at: number }
 >();
 
-export interface PluginInfo {
+/** 可装版本表（versions.json）是可选文件：取不到时按 manifest 版本回退，
+ * 不阻塞详情；短时缓存同时服务详情卡与更新检查。 */
+const COMPAT_TIMEOUT_MS = 5000;
+const VERSION_REQUIREMENTS_CACHE_TTL_MS = 10 * 60 * 1000;
+const VERSION_REQUIREMENTS_CACHE_LIMIT = 50;
+const versionRequirementsCache = new Map<
+	string,
+	{ requirements: Record<string, string>; at: number }
+>();
+
+export interface PluginInfo extends PluginInfoBase {
+	/** 本机可装版本：与 version 相同，或按 versions.json 回退到当前宿主能
+	 * 装的最高版。详情卡与默认安装都以它为准（官方同口径）。 */
+	installVersion: string;
+	installMinAppVersion: string;
+}
+
+interface PluginInfoBase {
 	id: string;
 	repo: string;
+	/** 默认分支 manifest 声明的版本（官方最新发布版）。 */
 	version: string;
 	name: string;
 	author: string;
@@ -81,11 +103,53 @@ async function getText(url: string): Promise<string> {
 	return res.text;
 }
 
-async function fetchManifestText(repo: string, prefix: string): Promise<string> {
+interface ParsedManifest {
+	rawManifest: string;
+	version: string;
+	minAppVersion: string;
+	name: string;
+	description: string;
+	isDesktopOnly: boolean;
+}
+
+/** 默认分支 manifest（官方同源：raw HEAD）；id 必须与官方清单一致（官方
+ * 详情/更新检查同样校验），不通过时再退 master/main，避免拿到改名前的
+ * 旧分支内容（Vtable 的 master 仍是 vtable-plugin / 1.0.2）。 */
+async function fetchManifest(
+	repo: string,
+	prefix: string,
+	pluginId: string,
+): Promise<ParsedManifest> {
 	let lastErr = "";
-	for (const branch of ["master", "main"]) {
+	for (const branch of ["HEAD", "master", "main"]) {
 		try {
-			return await getText(`${prefix}${RAW_BASE}${repo}/${branch}/manifest.json`);
+			const raw = await getText(
+				`${prefix}${RAW_BASE}${repo}/${branch}/manifest.json`,
+			);
+			const man = JSON.parse(raw) as {
+				id?: unknown;
+				version?: unknown;
+				minAppVersion?: unknown;
+				name?: unknown;
+				description?: unknown;
+				isDesktopOnly?: unknown;
+			};
+			const version = typeof man.version === "string" ? man.version.trim() : "";
+			if (!version) {
+				throw new Error("manifest 缺少版本号");
+			}
+			if (man.id !== pluginId) {
+				throw new Error("manifest id 与官方清单不一致");
+			}
+			return {
+				rawManifest: raw,
+				version,
+				minAppVersion:
+					typeof man.minAppVersion === "string" ? man.minAppVersion : "",
+				name: typeof man.name === "string" ? man.name : pluginId,
+				description: typeof man.description === "string" ? man.description : "",
+				isDesktopOnly: man.isDesktopOnly === true,
+			};
 		} catch (e) {
 			lastErr = String(e);
 		}
@@ -101,34 +165,25 @@ export const INSTALL_THEME_BEATS = 2;
 
 function fetchInfoFrom(
 	mirror: Mirror,
-	list: PluginListItem[],
-	pluginId: string,
-): Promise<{ info: PluginInfo; mirror: Mirror }> {
+	entry: PluginListItem,
+): Promise<{ info: PluginInfoBase; mirror: Mirror }> {
 	return (async () => {
-		const entry = list.find((e) => e.id === pluginId);
-		if (!entry) {
-			throw new NotFoundError(pluginId);
-		}
-		const rawManifest = await withTimeout(
-			fetchManifestText(entry.repo, mirror.prefix),
+		const man = await withTimeout(
+			fetchManifest(entry.repo, mirror.prefix, entry.id),
 			REQUEST_TIMEOUT_MS,
 		);
-		const man = JSON.parse(rawManifest) as Partial<PluginInfo>;
-		if (!man.version) {
-			throw new Error("manifest 缺少版本号");
-		}
 		return {
 			mirror,
 			info: {
-				id: pluginId,
+				id: entry.id,
 				repo: entry.repo,
 				version: man.version,
-				name: man.name ?? pluginId,
+				name: man.name,
 				author: entry.author,
-				description: man.description ?? "",
-				minAppVersion: man.minAppVersion ?? "",
-				isDesktopOnly: man.isDesktopOnly ?? false,
-				rawManifest,
+				description: man.description,
+				minAppVersion: man.minAppVersion,
+				isDesktopOnly: man.isDesktopOnly,
+				rawManifest: man.rawManifest,
 			},
 		};
 	})();
@@ -136,18 +191,12 @@ function fetchInfoFrom(
 
 function promiseAny<T>(tasks: Array<Promise<T>>): Promise<T> {
 	return new Promise((resolve, reject) => {
-		const errors: unknown[] = [];
 		let failures = 0;
 		for (const task of tasks) {
-			task.then(resolve, (e) => {
-				errors.push(e);
+			task.then(resolve, () => {
 				failures += 1;
 				if (failures === tasks.length) {
-					if (errors.every((x) => x instanceof NotFoundError)) {
-						reject(errors[0]);
-					} else {
-						reject(new Error("全部镜像均失败"));
-					}
+					reject(new Error("全部镜像均失败"));
 				}
 			});
 		}
@@ -161,9 +210,6 @@ async function withRetry<T>(fn: () => Promise<T>, times = 2): Promise<T> {
 			return await fn();
 		} catch (e) {
 			last = e;
-			if (e instanceof NotFoundError) {
-				throw e;
-			}
 			if (i < times) {
 				await new Promise((r) => window.setTimeout(r, 800));
 			}
@@ -265,11 +311,95 @@ export async function installTheme(
 	).setConfig("cssTheme", theme.name);
 }
 
+async function fetchVersionRequirementsFrom(
+	mirror: Mirror,
+	repo: string,
+): Promise<Record<string, string>> {
+	const res = await withTimeout(
+		requestUrl({
+			url: `${mirror.prefix}${RAW_BASE}${repo}/HEAD/versions.json`,
+		}),
+		COMPAT_TIMEOUT_MS,
+	);
+	if (res.status === 404) {
+		// 可选文件：多数插件没有 versions.json，404 视为空表而不是失败，
+		// 让镜像竞速按"最先答复"结束，不必等最慢的镜像也 404。
+		return {};
+	}
+	if (res.status >= 300) {
+		throw new Error(`HTTP ${res.status}`);
+	}
+	const requirements = parseVersionRequirements(res.text);
+	if (requirements === null) {
+		throw new Error("versions.json 解析失败");
+	}
+	return requirements;
+}
+
+/** versions.json（版本 → 最低宿主版本）；可选文件，全部镜像都取不到时按
+ * 空表处理（详情与更新检查都回退 manifest 口径）。 */
+async function loadVersionRequirements(
+	repo: string,
+): Promise<Record<string, string>> {
+	const cached = versionRequirementsCache.get(repo);
+	if (
+		cached &&
+		Date.now() - cached.at < VERSION_REQUIREMENTS_CACHE_TTL_MS
+	) {
+		return cached.requirements;
+	}
+	let requirements: Record<string, string> = {};
+	try {
+		requirements = await promiseAny(
+			MIRRORS.map((mirror) => fetchVersionRequirementsFrom(mirror, repo)),
+		);
+	} catch {
+		requirements = {};
+	}
+	versionRequirementsCache.set(repo, { requirements, at: Date.now() });
+	if (versionRequirementsCache.size > VERSION_REQUIREMENTS_CACHE_LIMIT) {
+		const oldest = versionRequirementsCache.keys().next().value;
+		if (oldest !== undefined) {
+			versionRequirementsCache.delete(oldest);
+		}
+	}
+	return requirements;
+}
+
 export async function fetchPluginInfo(
 	list: PluginListItem[],
 	pluginId: string,
 ): Promise<{ info: PluginInfo; mirror: Mirror }> {
-	return withRetry(() => promiseAny(MIRRORS.map((m) => fetchInfoFrom(m, list, pluginId))));
+	const entry = list.find((e) => e.id === pluginId);
+	if (!entry) {
+		throw new NotFoundError(pluginId);
+	}
+	const result = await withRetry(() =>
+		promiseAny(MIRRORS.map((m) => fetchInfoFrom(m, entry))),
+	);
+	let requirements: Record<string, string> = {};
+	try {
+		requirements = await fetchVersionRequirementsFrom(
+			result.mirror,
+			entry.repo,
+		);
+	} catch {
+		requirements = {};
+	}
+	const installable = resolveInstallableVersion(
+		result.info.version,
+		result.info.minAppVersion,
+		requirements,
+		apiVersion,
+	);
+	return {
+		info: {
+			...result.info,
+			installVersion: installable.version,
+			installMinAppVersion: installable.minAppVersion,
+		},
+		mirror: result.mirror,
+	};
 }
 
 export interface MirrorProbe {
@@ -417,10 +547,15 @@ function isDataApiAvailable(): Promise<boolean> {
 	return updateCheckProbe;
 }
 
-async function fetchManifestVersionFromMirror(
+interface ManifestMeta {
+	version: string;
+	minAppVersion: string;
+}
+
+async function fetchManifestMetaFromMirror(
 	repo: string,
 	mirror: Mirror,
-): Promise<string> {
+): Promise<ManifestMeta> {
 	const res = await withTimeout(
 		requestUrl({ url: `${mirror.prefix}${RAW_BASE}${repo}/HEAD/manifest.json` }),
 		UPDATE_CHECK_TIMEOUT_MS,
@@ -432,29 +567,38 @@ async function fetchManifestVersionFromMirror(
 	if (!version) {
 		throw new Error("manifest 缺少稳定版本号");
 	}
-	return version;
+	const man = JSON.parse(res.text) as { minAppVersion?: unknown };
+	return {
+		version,
+		minAppVersion:
+			typeof man.minAppVersion === "string" ? man.minAppVersion : "",
+	};
 }
 
 /** Mirror-proxied default-branch manifest; races all mirrors and takes the
  * first stable version. Used only when the jsDelivr tag source is unavailable. */
-async function fetchManifestVersion(repo: string): Promise<string> {
+async function fetchManifestMeta(repo: string): Promise<ManifestMeta> {
 	return promiseAny(
-		MIRRORS.map((mirror) => fetchManifestVersionFromMirror(repo, mirror)),
+		MIRRORS.map((mirror) => fetchManifestMetaFromMirror(repo, mirror)),
 	);
 }
 
-/** 官方插件最新稳定发布版（无则 null）。
+/** 官方插件可更新到的最高稳定版（无则 null）。
  *
  * Primary: jsDelivr tag list (numeric max stable; the list is tag-time
- * descending but not semantically ordered). When data.jsdelivr is unreachable
+ * descending but not semantically ordered), then versions.json drops versions
+ * that explicitly require a newer Obsidian. When data.jsdelivr is unreachable
  * (CN networks, 2026-10-21 batch outage), fall back to the default-branch
- * manifest through the mirror pool. The manifest path matches what the host
- * reads, but a plugin that publishes a tag without bumping its manifest can be
- * missed during the degraded round; that trade-off is recorded in DECISIONS.
- * Throws only when every source failed, so the view can count a real failure
- * instead of silently reporting "no updates". */
-export async function fetchLatestStableVersion(
+ * manifest through the mirror pool; an incompatible manifest version falls
+ * back to the highest compatible entry in versions.json. Versions missing from
+ * the table are unknown and stay eligible, so a plugin that publishes a tag
+ * without bumping its manifest can still be offered during a degraded round.
+ * Only checks versions.json when the candidate is actually newer than the
+ * installed version. Throws only when every source failed, so the view can
+ * count a real failure instead of silently reporting "no updates". */
+export async function fetchUpdateTarget(
 	repo: string,
+	installedVersion: string,
 ): Promise<string | null> {
 	let reachable = false;
 	if (await isDataApiAvailable()) {
@@ -466,17 +610,40 @@ export async function fetchLatestStableVersion(
 			);
 			reachable = true;
 			const latest = pickLatestStableVersion(versions);
-			if (latest) {
+			if (!latest) {
+				return null;
+			}
+			if ((compareNumericVersions(latest, installedVersion) ?? 0) <= 0) {
 				return latest;
 			}
+			const requirements = await loadVersionRequirements(repo);
+			return pickUpdateTarget(versions, requirements, apiVersion);
 		} catch {
 			// Fall through to the manifest transport.
 		}
 	}
 	try {
-		const latest = await fetchManifestVersion(repo);
+		const man = await fetchManifestMeta(repo);
 		reachable = true;
-		return latest;
+		if ((compareNumericVersions(man.version, installedVersion) ?? 0) <= 0) {
+			return man.version;
+		}
+		const gated = man.minAppVersion
+			? pickUpdateTarget(
+					[man.version],
+					{ [man.version]: man.minAppVersion },
+					apiVersion,
+				)
+			: man.version;
+		if (gated !== null) {
+			return gated;
+		}
+		const requirements = await loadVersionRequirements(repo);
+		return pickUpdateTarget(
+			Object.keys(requirements),
+			requirements,
+			apiVersion,
+		);
 	} catch {
 		// Fall through to the failure decision below.
 	}
