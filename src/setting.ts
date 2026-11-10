@@ -19,8 +19,9 @@ import { openExternal } from "./util";
 
 /** 作者 GitHub 仓库（与 README / Release 地址一致）。 */
 const GITHUB_URL = "https://github.com/jiaoyingxing/openplug";
-/** 作者小红书主页短链（与 Easy-Sync / Square 保持一致）。 */
-const XIAOHONGSHU_URL = "https://xhslink.com/m/57v8xzlVMKp";
+/** 作者小红书主页固定用户 ID 链接（与 Easy-Sync / Square 保持一致）。 */
+const XIAOHONGSHU_URL =
+	"https://www.xiaohongshu.com/user/profile/605dfc23000000000101cfdb";
 /** BRAT 在官方社区目录的详情页深度链接（由宿主协议接管打开）。 */
 const BRAT_URL = "obsidian://show-plugin?id=obsidian42-brat";
 
