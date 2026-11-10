@@ -170,7 +170,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 							},
 							{
 								name: "问题反馈",
-								desc: "使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
+								desc: "使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系我。",
 							},
 						],
 					},
@@ -382,7 +382,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		this.addReadOnlySetting(
 			group,
 			"问题反馈",
-			"使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系作者。",
+			"使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系我。",
 		);
 	}
 
