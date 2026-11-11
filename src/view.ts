@@ -37,9 +37,9 @@ type SearchKind = "plugin" | "theme";
 /** 搜索输入防抖：避免逐字重渲染与重复请求。 */
 const SEARCH_DEBOUNCE_MS = 250;
 
-/** 成功状态行自动消解前的停留时间：整批操作结束后仍留出阅读时间，随后
- * 清掉，避免连续更新时顶部成功条目累积（2026-11-11 用户反馈）。 */
-const BANNER_SETTLE_MS = 8000;
+/** 成功状态行各自消失前的停留时间：完成一条即开始计时，不等待整批结束
+ * （2026-11-11 用户要求 2 秒）。 */
+const BANNER_SUCCESS_TTL_MS = 2000;
 
 /** 更新列表每页条数：行含名称 + 作者 + 版本，单页 5 条保持板块紧凑
  * （2026-10-25 用户要求复用商店翻页结构，单页 5-6 条）。 */
@@ -115,9 +115,6 @@ export class OpenplugPickerView extends ItemView {
 	private bodyEl: HTMLElement | null = null;
 	private rootEl: HTMLElement | null = null;
 	private bannerEl: HTMLElement | null = null;
-	/** 完结消解计时：成功行在全部状态行完结后停留计时，新操作或有加载中
-	 * 行时取消。 */
-	private bannerSettleTimer: number | null = null;
 	private storeAddHost: HTMLElement | null = null;
 	private storeSection: StoreSection | null = null;
 	private listCache: PluginListItem[] | null = null;
@@ -172,10 +169,6 @@ export class OpenplugPickerView extends ItemView {
 		if (this.searchDebounceTimer !== null) {
 			window.clearTimeout(this.searchDebounceTimer);
 			this.searchDebounceTimer = null;
-		}
-		if (this.bannerSettleTimer !== null) {
-			window.clearTimeout(this.bannerSettleTimer);
-			this.bannerSettleTimer = null;
 		}
 		this.storeSection?.dispose();
 		this.storeSection = null;
@@ -251,6 +244,19 @@ export class OpenplugPickerView extends ItemView {
 		const line = el.createDiv({ cls: "openplug-banner-line is-loading" });
 		el.classList.remove("is-hidden");
 		let closed = false;
+		let successTimer: number | null = null;
+		const closeLine = (): void => {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (successTimer !== null) {
+				window.clearTimeout(successTimer);
+				successTimer = null;
+			}
+			line.remove();
+			this.recomputeBanner();
+		};
 		this.recomputeBanner();
 		return {
 			update: (text, state) => {
@@ -261,21 +267,22 @@ export class OpenplugPickerView extends ItemView {
 				line.classList.toggle("is-loading", state === "is-loading");
 				line.classList.toggle("is-success", state === "is-success");
 				line.classList.toggle("is-error", state === "is-error");
-				this.recomputeBanner();
-			},
-			close: () => {
-				if (closed) {
-					return;
+				// 成功行各自计时：完成一条就独立消失，不等待整批结束；失败行
+				// 保留，供用户回看原因。
+				if (state === "is-success" && successTimer === null) {
+					successTimer = window.setTimeout(() => {
+						successTimer = null;
+						closeLine();
+					}, BANNER_SUCCESS_TTL_MS);
 				}
-				closed = true;
-				line.remove();
 				this.recomputeBanner();
 			},
+			close: closeLine,
 		};
 	}
 
 	/** 依据现存状态行重算壳体：任意加载中 → is-loading（横移动效）；
-	 * 无行 → 隐藏；并维护成功行的自动消解计时。 */
+	 * 无行 → 隐藏。 */
 	private recomputeBanner(): void {
 		const el = this.bannerEl;
 		if (!el) {
@@ -287,41 +294,6 @@ export class OpenplugPickerView extends ItemView {
 			children.some((c) => c.classList.contains("is-loading")),
 		);
 		el.classList.toggle("is-hidden", children.length === 0);
-		this.scheduleBannerSettle(children);
-	}
-
-	/** 成功行消解：没有加载中的行时，停留片刻后只清成功行（失败行保留供
-	 * 用户回看原因）。并发操作只要还有一行在加载就保留整批结果；每次状态
-	 * 变化重新计时。 */
-	private scheduleBannerSettle(children: Element[]): void {
-		if (this.bannerSettleTimer !== null) {
-			window.clearTimeout(this.bannerSettleTimer);
-			this.bannerSettleTimer = null;
-		}
-		if (
-			children.some((c) => c.classList.contains("is-loading")) ||
-			!children.some((c) => c.classList.contains("is-success"))
-		) {
-			return;
-		}
-		this.bannerSettleTimer = window.setTimeout(() => {
-			this.bannerSettleTimer = null;
-			this.sweepBannerSuccess();
-		}, BANNER_SETTLE_MS);
-	}
-
-	/** 只清成功行，避免顶部累积；失败行与新操作仍走既有整行清扫规则。 */
-	private sweepBannerSuccess(): void {
-		const el = this.bannerEl;
-		if (!el) {
-			return;
-		}
-		for (const child of Array.from(el.children)) {
-			if (child.classList.contains("is-success")) {
-				child.remove();
-			}
-		}
-		this.recomputeBanner();
 	}
 
 	/** 清掉已完结（成功/失败）的历史行，避免壳体堆积；加载中的行保留——
