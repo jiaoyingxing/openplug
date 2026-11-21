@@ -14,7 +14,7 @@ import {
 
 export { compareNumericVersions } from "./update-check";
 
-export interface Mirror {
+interface Mirror {
 	id: string;
 	label: string;
 	prefix: string;
@@ -377,12 +377,12 @@ export async function fetchPluginInfo(
 	const result = await withRetry(() =>
 		promiseAny(MIRRORS.map((m) => fetchInfoFrom(m, entry))),
 	);
+	// 版本兼容表走带缓存的镜像竞速读取（与更新检查同一负责点），不再单镜像
+	// 单次请求——详情重开时重复请求且无 404 空表缓存（DECISIONS「详情卡
+	// 可装版本与宿主门槛」：按需拉表 + 404 视为空表并短缓存）。
 	let requirements: Record<string, string> = {};
 	try {
-		requirements = await fetchVersionRequirementsFrom(
-			result.mirror,
-			entry.repo,
-		);
+		requirements = await loadVersionRequirements(entry.repo);
 	} catch {
 		requirements = {};
 	}
@@ -402,7 +402,7 @@ export async function fetchPluginInfo(
 	};
 }
 
-export interface MirrorProbe {
+interface MirrorProbe {
 	mirror: Mirror;
 	ms: number | null;
 }

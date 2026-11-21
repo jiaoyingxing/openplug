@@ -4,7 +4,6 @@ import {
 	PluginSettingTab,
 	Setting,
 	SettingDefinitionItem,
-	SettingGroup,
 	setIcon,
 } from "obsidian";
 
@@ -36,7 +35,7 @@ function configureAboutContactButton(
 		extraClassName?: string;
 	},
 ): void {
-	button.setClass("openplug-settings-about-contact-button");
+	button.setClass("op-settings-about-contact-button");
 	button.setTooltip(options.label);
 	button.buttonEl.setAttribute("aria-label", options.label);
 	button.onClick(() => {
@@ -47,32 +46,34 @@ function configureAboutContactButton(
 		button.buttonEl.addClass(options.extraClassName);
 	}
 	const iconEl = button.buttonEl.createSpan({
-		cls: "openplug-settings-about-contact-button-icon",
+		cls: "op-settings-about-contact-button-icon",
 	});
 	setIcon(iconEl, options.icon);
 	button.buttonEl.createSpan({
-		cls: "openplug-settings-about-contact-button-label",
+		cls: "op-settings-about-contact-button-label",
 		text: options.label,
 	});
 }
 
 /**
- * 设置页。Obsidian ≥1.13 走声明式 getSettingDefinitions（设置可被设置搜索
- * 索引；带按钮/动态内容的行以 render 回调命令式构建，与 display() 共用
- * 同一批行构建器）；<1.13 回落 display()（官方行为：getSettingDefinitions
- * 返回非空时 display() 不再被调用）。
+ * 设置页（Obsidian ≥1.13 声明式）。静态信息行用 Empty 定义即可参与设置
+ * 搜索；带按钮或动态内容的行用 render 回调命令式构建。
+ *
+ * `<1.13` 回落（2026-11-20 用户定）：旧版没有声明式设置树，点开插件设置
+ * 不再渲染一套功能残缺的旧式页面，而是**直接进插件界面**（安装器）。
+ * `minAppVersion` 因此保持 1.11.4，旧版照常可装可用。
  */
 export class OpenplugSettingTab extends PluginSettingTab {
 	plugin: OpenplugPlugin;
 
 	/** 测速竞态序号：只让最后一次发起的测速写入结果，避免乱序覆盖。 */
-	private healthProbeSeq = 0;
-	/** 镜像状态行句柄（声明式/回落两条路径共用；重渲染时按下标刷新引用）。 */
-	private probeRows: Setting[] = [];
+	private _healthProbeSeq = 0;
+	/** 镜像状态行句柄（重渲染时按下标刷新引用，不追加重复行）。 */
+	private _probeRows: Setting[] = [];
 	/** 自动测速触发标记：每次打开设置页重新武装，首渲染即启动一次。 */
-	private probeStarted = false;
+	private _probeStarted = false;
 	/** 根级导航行行首图标补挂观察器（1.13+ 声明式；unload 时由 plugin.register 断开）。 */
-	private rootRowIconObserver: MutationObserver | null = null;
+	private _rootRowIconObserver: MutationObserver | null = null;
 
 	constructor(app: App, plugin: OpenplugPlugin) {
 		super(app, plugin);
@@ -80,7 +81,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		// 设置窗左栏页签图标：宿主默认隐藏第三方插件行的图标元素，由 styles.css
 		// 按 data-setting-id 只放开本插件那一行（做法与姊妹插件 EasySync / Resojot 同源）。
 		this.icon = SETTINGS_TAB_ICON;
-		this.observeRootRowIcons();
+		this._observeRootRowIcons();
 	}
 
 	/**
@@ -91,27 +92,41 @@ export class OpenplugSettingTab extends PluginSettingTab {
 	 * 时主窗 `document.hidden === true`，rAF 实测不触发。装饰只遍历容器内的
 	 * `.setting-item`（根级 ≤4 行）且幂等，成本可忽略。
 	 */
-	private observeRootRowIcons(): void {
-		this.rootRowIconObserver = new MutationObserver(() => {
-			this.decorateRootRowIcons();
+	private _observeRootRowIcons(): void {
+		this._rootRowIconObserver = new MutationObserver(() => {
+			this._decorateRootRowIcons();
 		});
-		this.rootRowIconObserver.observe(this.containerEl, {
+		this._rootRowIconObserver.observe(this.containerEl, {
 			attributes: false,
 			childList: true,
 			characterData: false,
 			subtree: true,
 		});
 		this.plugin.register(() => {
-			this.rootRowIconObserver?.disconnect();
-			this.rootRowIconObserver = null;
+			this._rootRowIconObserver?.disconnect();
+			this._rootRowIconObserver = null;
 		});
 	}
 
 	/**
-	 * `<1.13` 的 `display()` 形态没有根级导航行（行名与页名同名的行在那里是
-	 * 普通设置行），只在声明式渲染（1.13+）才装饰。
+	 * `<1.13` 回落（2026-11-20 用户定）：点开插件设置即直接进插件界面。
+	 *
+	 * 旧版没有声明式设置树，渲染旧式页面只会露出残缺的一组行；用户要求
+	 * 「点插件设置就直接打开插件界面」。先把设置收走再开面板——设置是
+	 * modal / 满屏 pane，不收走会把安装器完全遮住（与「打开插件界面」
+	 * 行同一处理，见 DECISIONS「打开插件界面行点击语义」）。
 	 */
-	private decorateRootRowIcons(): void {
+	display(): void {
+		this.containerEl.empty();
+		const settingsDialog = this.app as unknown as {
+			setting: { close: () => void };
+		};
+		settingsDialog.setting.close();
+		void this.plugin.openView();
+	}
+
+	/** 根级导航行行首图标补挂（仅声明式渲染有根级导航行）。 */
+	private _decorateRootRowIcons(): void {
 		const declarative = this as unknown as { settingItems?: unknown[] };
 		if (
 			declarative.settingItems === undefined
@@ -124,16 +139,14 @@ export class OpenplugSettingTab extends PluginSettingTab {
 
 	/**
 	 * 声明式设置定义（Obsidian ≥1.13）：静态信息行用 Empty 定义即可参与
-	 * 设置搜索；带按钮或动态内容的行用 render 回调命令式构建（与 display()
-	 * 同源实现）。此方法每次打开设置页与建立搜索索引时都会被调用。
+	 * 设置搜索；带按钮或动态内容的行用 render 回调命令式构建。
+	 * 此方法每次打开设置页与建立搜索索引时都会被调用。
 	 */
 	getSettingDefinitions(): SettingDefinitionItem[] {
-		// 声明式路径下 display() 不被调用，容器作用域类在此补挂（幂等；
-		// 与回落路径 display() 行为一致，见 20260828-1858 对齐惯例）。
-		this.containerEl.addClass("openplug-settings-tab");
-		// 重新武装自动测速：声明式路径在最后一镜像行渲染时触发（见
-		// renderMirrorRow），与回落路径 display() 末尾触发行为一致。
-		this.probeStarted = false;
+		// 容器作用域类在此补挂（幂等）。
+		this.containerEl.addClass("op-settings-tab");
+		// 重新武装自动测速：最后一镜像行渲染时触发（见 _renderMirrorRow）。
+		this._probeStarted = false;
 		// 根级＝两组（2026-10-17 用户拍板修订）：「打开插件界面」单独一组，三个
 		// 子页一组；EasySync 2026-10-11 同型无标题轻分组。页内沿用各组原行序与
 		// 文案直接平移（EasySync 维护页同型：页内裸行），页名承接原组标题语义，
@@ -145,7 +158,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 					{
 						name: "打开插件界面",
 						desc: "搜索并安装社区插件与主题。",
-						render: (setting) => this.renderOpenRow(setting),
+						render: (setting) => this._renderOpenRow(setting),
 					},
 				],
 			},
@@ -166,7 +179,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 							{
 								name: "作者",
 								desc: "焦应行（Jiao Yingxing）",
-								render: (setting) => this.renderAuthorRow(setting),
+								render: (setting) => this._renderAuthorRow(setting),
 							},
 							{
 								name: "问题反馈",
@@ -190,7 +203,7 @@ export class OpenplugSettingTab extends PluginSettingTab {
 							{
 								name: "下载",
 								desc: "仅支持官方社区已上架的插件与主题。未上架的插件需用 BRAT 下载。（我做了汉化，已被作者合并）",
-								render: (setting) => this.renderDownloadRow(setting),
+								render: (setting) => this._renderDownloadRow(setting),
 							},
 							{
 								name: "风险提示",
@@ -212,12 +225,12 @@ export class OpenplugSettingTab extends PluginSettingTab {
 							{
 								name: "镜像测速",
 								desc: "查看各镜像源当前的连通与延迟。",
-								render: (setting) => this.renderProbeControlRow(setting),
+								render: (setting) => this._renderProbeControlRow(setting),
 							},
 							...MIRRORS.map((mirror, index) => ({
 								name: mirror.label,
 								render: (setting: Setting) =>
-									this.renderMirrorRow(setting, index),
+									this._renderMirrorRow(setting, index),
 							})),
 						],
 					},
@@ -226,25 +239,8 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		];
 	}
 
-	/** <1.13 回落：命令式整页渲染（行构建与声明式共用同一批构建器）。 */
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-		containerEl.addClass("openplug-settings-tab");
-
-		this.renderHomeGroup(containerEl);
-		this.renderAboutGroup(containerEl);
-		this.renderNoticeGroup(containerEl);
-		this.renderHealthGroup(containerEl);
-	}
-
 	/** 顶部高频入口：一键打开插件安装器界面。 */
-	private renderHomeGroup(containerEl: HTMLElement): void {
-		const group = new SettingGroup(containerEl);
-		group.addSetting((setting) => this.renderOpenRow(setting));
-	}
-
-	private renderOpenRow(setting: Setting): void {
+	private _renderOpenRow(setting: Setting): void {
 		setting
 			.setName("打开插件界面")
 			.setDesc("搜索并安装社区插件与主题。")
@@ -266,23 +262,8 @@ export class OpenplugSettingTab extends PluginSettingTab {
 			});
 	}
 
-	/**
-	 * 镜像测速：无标题轻分组 + 每镜像一行的窄条目状态行。
-	 * 低频板块，下沉到设置页末尾；测速结果就地回写各行的 desc，不整页重建
-	 * （无跳顶、无闪烁；声明式模式下同样就地写回，不触发 update() 重渲染）。
-	 */
-	private renderHealthGroup(containerEl: HTMLElement): void {
-		const group = new SettingGroup(containerEl);
-		group.addSetting((setting) => this.renderProbeControlRow(setting));
-		for (let index = 0; index < MIRRORS.length; index++) {
-			group.addSetting((setting) =>
-				this.renderMirrorRow(setting, index),
-			);
-		}
-	}
-
-	/** 「重新测速」按钮行（两条路径共用；点击测速目标总是 this.probeRows）。 */
-	private renderProbeControlRow(setting: Setting): void {
+	/** 「重新测速」按钮行（点击测速目标总是 this._probeRows）。 */
+	private _renderProbeControlRow(setting: Setting): void {
 		setting
 			.setName("镜像测速")
 			.setDesc("查看各镜像源当前的连通与延迟。")
@@ -290,31 +271,31 @@ export class OpenplugSettingTab extends PluginSettingTab {
 				button
 					.setButtonText("重新测速")
 					.onClick(() => {
-						void this.runHealthProbe(this.probeRows);
+						void this._runHealthProbe(this._probeRows);
 					});
 			});
 	}
 
 	/**
 	 * 单镜像状态行：按下标存句柄（重渲染刷新引用、不追加重复）；最后一行的
-	 * 渲染同时触发自动测速（回落路径的旧行为是 display() 末尾触发，等价）。
+	 * 渲染同时触发自动测速。
 	 */
-	private renderMirrorRow(setting: Setting, index: number): void {
+	private _renderMirrorRow(setting: Setting, index: number): void {
 		setting.setName(MIRRORS[index]?.label ?? "");
-		this.probeRows[index] = setting;
-		if (index === MIRRORS.length - 1 && !this.probeStarted) {
-			this.probeStarted = true;
-			void this.runHealthProbe(this.probeRows);
+		this._probeRows[index] = setting;
+		if (index === MIRRORS.length - 1 && !this._probeStarted) {
+			this._probeStarted = true;
+			void this._runHealthProbe(this._probeRows);
 		}
 	}
 
-	private async runHealthProbe(rows: Setting[]): Promise<void> {
-		const seq = ++this.healthProbeSeq;
+	private async _runHealthProbe(rows: Setting[]): Promise<void> {
+		const seq = ++this._healthProbeSeq;
 		for (const row of rows) {
 			row.setDesc("测速中…");
 		}
 		const probes = await probeMirrorsHealth();
-		if (seq !== this.healthProbeSeq) {
+		if (seq !== this._healthProbeSeq) {
 			return;
 		}
 		for (let i = 0; i < probes.length && i < rows.length; i++) {
@@ -323,39 +304,13 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		}
 	}
 
-	/** 使用须知：按用户定稿。 */
-	private renderNoticeGroup(containerEl: HTMLElement): void {
-		const group = new SettingGroup(containerEl).setHeading("使用须知");
-		this.addReadOnlySetting(
-			group,
-			"隐私",
-			"本插件开源，不收集你的数据，无遥测，无广告，不设账号。",
-		);
-		this.addReadOnlySetting(
-			group,
-			"来源",
-			"所列的全部插件与主题均通过第三方 GitHub 镜像站点获取。",
-		);
-		group.addSetting((setting) => this.renderDownloadRow(setting));
-		this.addReadOnlySetting(
-			group,
-			"风险提示",
-			"插件上架前虽然会有官方自动审核，但多数插件为个人开发者维护，无法确保质量。建议优先选用下载量大、长期稳定维护的插件。",
-		);
-		this.addReadOnlySetting(
-			group,
-			"免责声明",
-			"下载与安装即代表你已知悉并自行承担由此带来的全部风险（包括但不限于数据丢失、设备安全、隐私泄露等）。",
-		);
-	}
-
 	/**
 	 * 「下载」行：desc 内嵌 BRAT 深度链接，点击经 openExternal 交宿主协议
 	 * 处理（webviewer 开启时 window.open 被拦入应用内浏览器，处理不了
 	 * obsidian://，见 DECISIONS「外链打开策略」）；与主页空态官方社区链接
 	 * 同款写法。声明式定义里的 desc 为同文纯文本，供设置搜索索引。
 	 */
-	private renderDownloadRow(setting: Setting): void {
+	private _renderDownloadRow(setting: Setting): void {
 		setting
 			.setName("下载")
 			.setDesc("仅支持官方社区已上架的插件与主题。未上架的插件需用 ");
@@ -370,26 +325,10 @@ export class OpenplugSettingTab extends PluginSettingTab {
 		setting.descEl.append(" 下载。（我做了汉化，已被作者合并）");
 	}
 
-	/** 「关于」组：EasySync 三行同型照抄（产品/作者/问题反馈），与声明式关于页逐行同构。 */
-	private renderAboutGroup(containerEl: HTMLElement): void {
-		const group = new SettingGroup(containerEl).setHeading("关于");
-		this.addReadOnlySetting(
-			group,
-			"OpenPlug",
-			`版本 ${this.plugin.manifest.version?.trim() || ""}`,
-		);
-		group.addSetting((setting) => this.renderAuthorRow(setting));
-		this.addReadOnlySetting(
-			group,
-			"问题反馈",
-			"使用中遇到问题，可在 GitHub 提交 Issue，或通过小红书私信联系我。",
-		);
-	}
-
-	/** 作者行：GitHub／小红书图标钮（EasySync 同型照抄；两轨道共用同一构建器）。 */
-	private renderAuthorRow(setting: Setting): void {
+	/** 作者行：GitHub／小红书图标钮（EasySync 同型照抄）。 */
+	private _renderAuthorRow(setting: Setting): void {
 		setting
-			.setClass("openplug-settings-about-contact-setting")
+			.setClass("op-settings-about-contact-setting")
 			.setName("作者")
 			.setDesc("焦应行（Jiao Yingxing）");
 		setting.addButton((button) => {
@@ -405,18 +344,8 @@ export class OpenplugSettingTab extends PluginSettingTab {
 				icon: "book-open",
 				url: XIAOHONGSHU_URL,
 				extraClassName:
-					"openplug-settings-about-contact-button--xiaohongshu",
+					"op-settings-about-contact-button--xiaohongshu",
 			});
-		});
-	}
-
-	private addReadOnlySetting(
-		group: SettingGroup,
-		name: string,
-		description: string,
-	): void {
-		group.addSetting((setting) => {
-			setting.setName(name).setDesc(description);
 		});
 	}
 }

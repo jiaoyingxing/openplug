@@ -18,14 +18,14 @@ export function createPager(
 	onPrev: () => void,
 	onNext: () => void,
 ): PagerHandle {
-	const el = parent.createDiv({ cls: "openplug-pager is-hidden" });
+	const el = parent.createDiv({ cls: "op-pager is-hidden" });
 	const prev = el.createEl("button", {
-		cls: "openplug-pager-btn",
+		cls: "op-pager-btn",
 		text: "上一页",
 	});
-	const info = el.createSpan({ cls: "openplug-pager-info" });
+	const info = el.createSpan();
 	const next = el.createEl("button", {
-		cls: "openplug-pager-btn",
+		cls: "op-pager-btn",
 		text: "下一页",
 	});
 	prev.addEventListener("click", onPrev);

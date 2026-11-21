@@ -24,277 +24,280 @@ import {
 	StoreSort,
 } from "./store";
 
+/** 商店数据不可用的统一错误文案（开关关闭与请求失败共用一处）。 */
+const STORE_UNAVAILABLE_MESSAGE = "商店数据暂时不可用，请稍后重试。";
+
 /**
  * 分类筛选：添加按钮常驻顶部搜索行右侧；chips + 排序在下一行；
  * 结果卡只在已选分类且未搜索时出现在正文。
  */
 export class StoreSection {
-	private readonly app: App;
-	private readonly openPlugin: (id: string, meta: StoreDetailMeta) => void;
+	private readonly _app: App;
+	private readonly _openPlugin: (id: string, meta: StoreDetailMeta) => void;
 
-	private readonly selectedTags = new Set<string>();
-	private sort: StoreSort = "downloads";
-	private page = 1;
-	private pages = 1;
-	private categoryOptions: CategoryOption[] = buildDefaultCategoryOptions();
-	private categoriesLoaded = false;
-	private categoriesLoading = false;
-	private requestSeq = 0;
-	private loading = false;
-	private disposed = false;
-	private searchActive = false;
-	private lastResult: StorePage | null = null;
-	private lastResultKey = "";
-	private modal: CategoryModal | null = null;
+	private readonly _selectedTags = new Set<string>();
+	private _sort: StoreSort = "downloads";
+	private _page = 1;
+	private _pages = 1;
+	private _categoryOptions: CategoryOption[] = buildDefaultCategoryOptions();
+	private _categoriesLoaded = false;
+	private _categoriesLoading = false;
+	private _requestSeq = 0;
+	private _loading = false;
+	private _disposed = false;
+	private _searchActive = false;
+	private _lastResult: StorePage | null = null;
+	private _lastResultKey = "";
+	private _modal: CategoryModal | null = null;
 
-	private addButtonRootEl: HTMLElement | null = null;
-	private resultsRootEl: HTMLElement | null = null;
-	private anchorEl: HTMLElement | null = null;
-	private chipsEl: HTMLElement | null = null;
-	private statusEl: HTMLElement | null = null;
-	private listEl: HTMLElement | null = null;
-	private pager: PagerHandle | null = null;
+	private _addButtonRootEl: HTMLElement | null = null;
+	private _resultsRootEl: HTMLElement | null = null;
+	private _anchorEl: HTMLElement | null = null;
+	private _chipsEl: HTMLElement | null = null;
+	private _statusEl: HTMLElement | null = null;
+	private _listEl: HTMLElement | null = null;
+	private _pager: PagerHandle | null = null;
 
 	constructor(
 		app: App,
 		openPlugin: (id: string, meta: StoreDetailMeta) => void,
 	) {
-		this.app = app;
-		this.openPlugin = openPlugin;
+		this._app = app;
+		this._openPlugin = openPlugin;
 	}
 
 	mountAddButton(host: HTMLElement): void {
-		if (this.disposed) {
+		if (this._disposed) {
 			return;
 		}
-		if (this.addButtonRootEl !== host) {
-			this.addButtonRootEl?.empty();
-			this.addButtonRootEl?.removeClass("openplug-store-add-host");
+		if (this._addButtonRootEl !== host) {
+			this._addButtonRootEl?.empty();
+			this._addButtonRootEl?.removeClass("op-store-add-host");
 			host.empty();
-			host.addClass("openplug-store-add-host");
-			this.addButtonRootEl = host;
-			this.buildAddButton(host);
+			host.addClass("op-store-add-host");
+			this._addButtonRootEl = host;
+			this._buildAddButton(host);
 		}
 	}
 
 	mountResults(container: HTMLElement): void {
-		if (this.disposed) {
+		if (this._disposed) {
 			return;
 		}
-		this.anchorEl = container;
-		if (!this.resultsRootEl) {
+		this._anchorEl = container;
+		if (!this._resultsRootEl) {
 			container.empty();
-			this.resultsRootEl = container.createDiv({ cls: "openplug-store" });
-			this.buildResults(this.resultsRootEl);
+			this._resultsRootEl = container.createDiv({ cls: "op-store" });
+			this._buildResults(this._resultsRootEl);
 		} else {
 			container.empty();
-			container.appendChild(this.resultsRootEl);
+			container.appendChild(this._resultsRootEl);
 		}
-		this.renderChips();
-		this.updateVisibility();
-		void this.loadCategories();
-		if (this.selectedTags.size === 0 || this.searchActive) {
+		this._renderChips();
+		this._updateVisibility();
+		void this._loadCategories();
+		if (this._selectedTags.size === 0 || this._searchActive) {
 			return;
 		}
-		const key = this.currentKey();
-		if (this.lastResult && this.lastResultKey === key) {
-			this.renderResults(this.lastResult);
-		} else if (!this.loading) {
-			void this.refreshResults();
+		const key = this._currentKey();
+		if (this._lastResult && this._lastResultKey === key) {
+			this._renderResults(this._lastResult);
+		} else if (!this._loading) {
+			void this._refreshResults();
 		}
 	}
 
 	setSearchActive(active: boolean): void {
-		if (this.searchActive === active) {
+		if (this._searchActive === active) {
 			return;
 		}
-		this.searchActive = active;
-		this.updateVisibility();
+		this._searchActive = active;
+		this._updateVisibility();
 	}
 
 	dispose(): void {
-		this.disposed = true;
-		this.requestSeq += 1;
-		this.modal?.close();
-		this.modal = null;
-		this.addButtonRootEl?.empty();
-		this.addButtonRootEl?.removeClass("openplug-store-add-host");
-		this.addButtonRootEl = null;
-		this.resultsRootEl?.remove();
-		this.resultsRootEl = null;
+		this._disposed = true;
+		this._requestSeq += 1;
+		this._modal?.close();
+		this._modal = null;
+		this._addButtonRootEl?.empty();
+		this._addButtonRootEl?.removeClass("op-store-add-host");
+		this._addButtonRootEl = null;
+		this._resultsRootEl?.remove();
+		this._resultsRootEl = null;
 	}
 
 	isSelected(slug: string): boolean {
-		return this.selectedTags.has(slug);
+		return this._selectedTags.has(slug);
 	}
 
 	getCategoryOptions(): CategoryOption[] {
-		return this.categoryOptions;
+		return this._categoryOptions;
 	}
 
 	onModalClosed(modal: CategoryModal): void {
-		if (this.modal === modal) {
-			this.modal = null;
+		if (this._modal === modal) {
+			this._modal = null;
 		}
 	}
 
 	clearCategories(): void {
-		if (this.disposed || this.selectedTags.size === 0) {
+		if (this._disposed || this._selectedTags.size === 0) {
 			return;
 		}
-		this.selectedTags.clear();
-		this.page = 1;
-		this.renderChips();
-		this.updateVisibility();
+		this._selectedTags.clear();
+		this._page = 1;
+		this._renderChips();
+		this._updateVisibility();
 	}
 
 	toggleCategory(slug: string): void {
-		if (this.disposed) {
+		if (this._disposed) {
 			return;
 		}
-		if (this.selectedTags.has(slug)) {
-			this.selectedTags.delete(slug);
+		if (this._selectedTags.has(slug)) {
+			this._selectedTags.delete(slug);
 		} else {
-			this.selectedTags.add(slug);
+			this._selectedTags.add(slug);
 		}
-		const active = this.selectedTags.size > 0;
-		this.renderChips();
-		this.page = 1;
-		this.updateVisibility();
+		const active = this._selectedTags.size > 0;
+		this._renderChips();
+		this._page = 1;
+		this._updateVisibility();
 		if (active) {
-			void this.refreshResults();
+			void this._refreshResults();
 		}
 	}
 
-	private buildAddButton(host: HTMLElement): void {
-		const add = host.createEl("button", { cls: "openplug-store-add" });
-		const addIcon = add.createSpan({ cls: "openplug-store-add-icon" });
+	private _buildAddButton(host: HTMLElement): void {
+		const add = host.createEl("button", { cls: "op-store-add" });
+		const addIcon = add.createSpan({ cls: "op-store-add-icon" });
 		setIcon(addIcon, "plus");
 		add.createSpan({ text: "分类筛选" });
-		add.addEventListener("click", () => this.openCategoryModal());
+		add.addEventListener("click", () => this._openCategoryModal());
 	}
 
-	private buildResults(card: HTMLElement): void {
-		const filterRow = card.createDiv({ cls: "openplug-store-toolbar" });
-		this.chipsEl = filterRow.createDiv({
-			cls: "openplug-store-chips is-hidden",
+	private _buildResults(card: HTMLElement): void {
+		const filterRow = card.createDiv({ cls: "op-store-toolbar" });
+		this._chipsEl = filterRow.createDiv({
+			cls: "op-store-chips is-hidden",
 		});
-		this.chipsEl.setAttribute("role", "list");
-		const controls = filterRow.createDiv({ cls: "openplug-store-controls" });
+		this._chipsEl.setAttribute("role", "list");
+		const controls = filterRow.createDiv({ cls: "op-store-controls" });
 		const sortEl = controls.createEl("select", { cls: "dropdown" });
 		sortEl.setAttribute("aria-label", "排序");
 		sortEl.createEl("option", { value: "downloads", text: "热门" });
 		sortEl.createEl("option", { value: "updated", text: "最近更新" });
 		sortEl.createEl("option", { value: "name", text: "名称" });
-		sortEl.value = this.sort;
+		sortEl.value = this._sort;
 		sortEl.addEventListener("change", () => {
-			this.sort = sortEl.value as StoreSort;
-			this.page = 1;
-			void this.refreshResults();
+			this._sort = sortEl.value as StoreSort;
+			this._page = 1;
+			void this._refreshResults();
 		});
 		const clear = controls.createEl("button", {
-			cls: "openplug-close openplug-store-clear",
+			cls: "op-close op-store-clear",
 		});
 		setIcon(clear, "x");
 		clear.setAttribute("aria-label", "清空筛选");
 		clear.addEventListener("click", () => this.clearCategories());
 
-		this.statusEl = card.createDiv({ cls: "openplug-store-status is-hidden" });
-		this.listEl = card.createDiv({ cls: "openplug-store-list is-hidden" });
+		this._statusEl = card.createDiv({ cls: "op-store-status is-hidden" });
+		this._listEl = card.createDiv({ cls: "op-store-list is-hidden" });
 
-		this.pager = createPager(
+		this._pager = createPager(
 			card,
-			() => this.changePage(-1),
-			() => this.changePage(1),
+			() => this._changePage(-1),
+			() => this._changePage(1),
 		);
 	}
 
-	private openCategoryModal(): void {
-		if (this.disposed || this.modal) {
+	private _openCategoryModal(): void {
+		if (this._disposed || this._modal) {
 			return;
 		}
-		void this.loadCategories();
-		this.modal = new CategoryModal(this.app, this);
-		this.modal.open();
+		void this._loadCategories();
+		this._modal = new CategoryModal(this._app, this);
+		this._modal.open();
 	}
 
-	private updateVisibility(): void {
-		const active = this.selectedTags.size > 0;
-		this.resultsRootEl?.toggleClass(
+	private _updateVisibility(): void {
+		const active = this._selectedTags.size > 0;
+		this._resultsRootEl?.toggleClass(
 			"is-hidden",
-			!active || this.searchActive,
+			!active || this._searchActive,
 		);
 		if (active) {
 			return;
 		}
-		this.requestSeq += 1;
-		this.loading = false;
-		this.statusEl?.addClass("is-hidden");
-		this.statusEl?.empty();
-		this.pager?.hide();
-		this.listEl?.empty();
-		this.lastResult = null;
-		this.lastResultKey = "";
+		this._requestSeq += 1;
+		this._loading = false;
+		this._statusEl?.addClass("is-hidden");
+		this._statusEl?.empty();
+		this._pager?.hide();
+		this._listEl?.empty();
+		this._lastResult = null;
+		this._lastResultKey = "";
 	}
 
-	private async loadCategories(): Promise<void> {
-		if (!STORE_ONLINE_ENABLED || this.categoriesLoaded || this.categoriesLoading) {
+	private async _loadCategories(): Promise<void> {
+		if (!STORE_ONLINE_ENABLED || this._categoriesLoaded || this._categoriesLoading) {
 			return;
 		}
-		this.categoriesLoading = true;
+		this._categoriesLoading = true;
 		try {
-			this.categoryOptions = await fetchStoreFacets();
-			this.categoriesLoaded = true;
+			this._categoryOptions = await fetchStoreFacets();
+			this._categoriesLoaded = true;
 		} catch {
 			// 保留默认 8 个官方分类；结果区仍按自己的错误态提示
 		} finally {
-			this.categoriesLoading = false;
+			this._categoriesLoading = false;
 		}
 	}
 
-	private currentKey(): string {
-		return `${Array.from(this.selectedTags).sort().join(",")}|${this.sort}|${this.page}`;
+	private _currentKey(): string {
+		return `${Array.from(this._selectedTags).sort().join(",")}|${this._sort}|${this._page}`;
 	}
 
-	private async refreshResults(): Promise<void> {
-		if (this.disposed || this.selectedTags.size === 0) {
+	private async _refreshResults(): Promise<void> {
+		if (this._disposed || this._selectedTags.size === 0) {
 			return;
 		}
 		if (!STORE_ONLINE_ENABLED) {
-			this.renderError("商店数据暂时不可用，请稍后重试。", false);
+			this._renderError(STORE_UNAVAILABLE_MESSAGE, false);
 			return;
 		}
-		const seq = ++this.requestSeq;
-		this.loading = true;
-		this.setStatus("正在加载插件…");
-		this.listEl?.empty();
-		this.listEl?.addClass("is-hidden");
-		this.pager?.hide();
-		const key = this.currentKey();
+		const seq = ++this._requestSeq;
+		this._loading = true;
+		this._setStatus("正在加载插件…");
+		this._listEl?.empty();
+		this._listEl?.addClass("is-hidden");
+		this._pager?.hide();
+		const key = this._currentKey();
 		try {
 			const result = await fetchStorePage(
-				Array.from(this.selectedTags),
-				this.sort,
-				this.page,
+				Array.from(this._selectedTags),
+				this._sort,
+				this._page,
 			);
-			if (this.disposed || seq !== this.requestSeq) {
+			if (this._disposed || seq !== this._requestSeq) {
 				return;
 			}
-			this.lastResult = result;
-			this.lastResultKey = key;
-			this.loading = false;
-			this.renderResults(result);
+			this._lastResult = result;
+			this._lastResultKey = key;
+			this._loading = false;
+			this._renderResults(result);
 		} catch {
-			if (this.disposed || seq !== this.requestSeq) {
+			if (this._disposed || seq !== this._requestSeq) {
 				return;
 			}
-			this.loading = false;
-			this.renderError("商店数据暂时不可用，请稍后重试。");
+			this._loading = false;
+			this._renderError(STORE_UNAVAILABLE_MESSAGE);
 		}
 	}
 
-	private setStatus(text: string): void {
-		const el = this.statusEl;
+	private _setStatus(text: string): void {
+		const el = this._statusEl;
 		if (!el) {
 			return;
 		}
@@ -304,11 +307,11 @@ export class StoreSection {
 		el.createSpan({ text });
 	}
 
-	private renderError(message: string, retry = true): void {
-		this.listEl?.empty();
-		this.listEl?.addClass("is-hidden");
-		this.pager?.hide();
-		const el = this.statusEl;
+	private _renderError(message: string, retry = true): void {
+		this._listEl?.empty();
+		this._listEl?.addClass("is-hidden");
+		this._pager?.hide();
+		const el = this._statusEl;
 		if (!el) {
 			return;
 		}
@@ -318,59 +321,59 @@ export class StoreSection {
 		el.createSpan({ text: message });
 		if (retry && STORE_ONLINE_ENABLED) {
 			const button = el.createEl("button", {
-				cls: "openplug-store-retry",
+				cls: "op-store-retry",
 				text: "重试",
 			});
 			button.addEventListener("click", () => {
-				void this.loadCategories();
-				void this.refreshResults();
+				void this._loadCategories();
+				void this._refreshResults();
 			});
 		}
 	}
 
-	private renderResults(result: StorePage): void {
-		this.statusEl?.addClass("is-hidden");
-		this.statusEl?.empty();
-		const list = this.listEl;
+	private _renderResults(result: StorePage): void {
+		this._statusEl?.addClass("is-hidden");
+		this._statusEl?.empty();
+		const list = this._listEl;
 		if (!list) {
 			return;
 		}
 		list.empty();
 		list.removeClass("is-hidden");
 		const pages = Math.max(1, Math.ceil(result.found / STORE_PAGE_SIZE));
-		if (this.page > pages) {
-			this.page = pages;
-			void this.refreshResults();
+		if (this._page > pages) {
+			this._page = pages;
+			void this._refreshResults();
 			return;
 		}
-		this.pages = pages;
+		this._pages = pages;
 		if (result.hits.length === 0) {
 			list.createDiv({
-				cls: "openplug-store-empty",
+				cls: "op-store-empty",
 				text: "这个分类下暂时没有插件。",
 			});
-			this.pager?.hide();
+			this._pager?.hide();
 			return;
 		}
 		for (const hit of result.hits) {
 			const doc = hit.document;
 			if (doc?.slug) {
-				this.renderRow(list, doc);
+				this._renderRow(list, doc);
 			}
 		}
-		this.pager?.setPage(this.page, pages);
+		this._pager?.setPage(this._page, pages);
 	}
 
-	private renderRow(list: HTMLElement, doc: StoreHitDocument): void {
+	private _renderRow(list: HTMLElement, doc: StoreHitDocument): void {
 		const slug = doc.slug;
 		if (!slug) {
 			return;
 		}
-		const row = list.createDiv({ cls: "openplug-result openplug-store-row" });
+		const row = list.createDiv({ cls: "op-result op-store-row" });
 		row.setAttr("role", "button");
 		row.setAttr("tabindex", "0");
-		const head = row.createDiv({ cls: "openplug-result-head" });
-		head.createDiv({ cls: "openplug-result-name", text: doc.name ?? slug });
+		const head = row.createDiv({ cls: "op-result-head" });
+		head.createDiv({ cls: "op-result-name", text: doc.name ?? slug });
 
 		const parts: string[] = [];
 		const author = doc.authors?.join(", ").trim() ?? "";
@@ -385,24 +388,24 @@ export class StoreSection {
 			parts.push(`上次更新 ${updated}`);
 		}
 		if (parts.length > 0) {
-			row.createDiv({ cls: "openplug-result-desc", text: parts.join(" · ") });
+			row.createDiv({ cls: "op-result-desc", text: parts.join(" · ") });
 		}
 		if (doc.short_desc) {
 			row.createDiv({
-				cls: "openplug-result-desc openplug-store-desc",
+				cls: "op-result-desc op-store-desc",
 				text: doc.short_desc,
 			});
 			const preset = getPresetTranslation(slug);
 			if (preset) {
 				row.createDiv({
-					cls: "openplug-result-trans openplug-desc-trans",
+					cls: "op-result-trans op-desc-trans",
 					text: preset,
 				});
 			}
 		}
 
 		const open = (): void => {
-			this.openPlugin(slug, {
+			this._openPlugin(slug, {
 				downloads:
 					typeof doc.downloads === "number"
 						? formatDownloads(doc.downloads)
@@ -419,42 +422,42 @@ export class StoreSection {
 		});
 	}
 
-	private changePage(delta: number): void {
-		const next = Math.min(this.pages, Math.max(1, this.page + delta));
-		if (next === this.page) {
+	private _changePage(delta: number): void {
+		const next = Math.min(this._pages, Math.max(1, this._page + delta));
+		if (next === this._page) {
 			return;
 		}
-		this.page = next;
-		this.anchorEl?.scrollIntoView({ block: "start" });
-		void this.refreshResults();
+		this._page = next;
+		this._anchorEl?.scrollIntoView({ block: "start" });
+		void this._refreshResults();
 	}
 
-	private renderChips(): void {
-		const el = this.chipsEl;
+	private _renderChips(): void {
+		const el = this._chipsEl;
 		if (!el) {
 			return;
 		}
 		el.empty();
-		if (this.selectedTags.size === 0) {
+		if (this._selectedTags.size === 0) {
 			el.addClass("is-hidden");
 			return;
 		}
 		el.removeClass("is-hidden");
-		for (const slug of this.selectedTags) {
+		for (const slug of this._selectedTags) {
 			const meta = getCategoryMeta(slug);
 			const chip = el.createDiv({
-				cls: "openplug-store-chip",
+				cls: "op-store-chip",
 				attr: { role: "listitem" },
 			});
 			chip.createSpan({
-				cls: "openplug-store-chip-label",
+				cls: "op-store-chip-label",
 				text: meta.label,
 			});
 			const remove = new ExtraButtonComponent(chip);
 			remove.setIcon("x");
 			remove.setTooltip(`移除 ${meta.label}`);
 			remove.onClick(() => this.toggleCategory(slug));
-			remove.extraSettingsEl.addClass("openplug-store-chip-remove");
+			remove.extraSettingsEl.addClass("op-store-chip-remove");
 			remove.extraSettingsEl.setAttribute(
 				"aria-label",
 				`移除 ${meta.label}`,
@@ -465,11 +468,11 @@ export class StoreSection {
 
 /** 官方 FuzzySuggestModal：搜索、键盘、空态、关闭都由宿主接管。 */
 class CategoryModal extends FuzzySuggestModal<CategoryOption> {
-	private readonly store: StoreSection;
+	private readonly _store: StoreSection;
 
 	constructor(app: App, store: StoreSection) {
 		super(app);
-		this.store = store;
+		this._store = store;
 		this.limit = 100;
 		this.emptyStateText = "无匹配分类";
 	}
@@ -486,7 +489,7 @@ class CategoryModal extends FuzzySuggestModal<CategoryOption> {
 	}
 
 	getItems(): CategoryOption[] {
-		return this.store.getCategoryOptions();
+		return this._store.getCategoryOptions();
 	}
 
 	getItemText(item: CategoryOption): string {
@@ -495,23 +498,23 @@ class CategoryModal extends FuzzySuggestModal<CategoryOption> {
 
 	renderSuggestion(match: FuzzyMatch<CategoryOption>, el: HTMLElement): void {
 		const option = match.item;
-		el.addClass("openplug-store-suggest-item");
+		el.addClass("op-store-suggest-item");
 		el.empty();
-		const icon = el.createSpan({ cls: "openplug-store-suggest-icon" });
+		const icon = el.createSpan({ cls: "op-store-suggest-icon" });
 		setIcon(icon, option.icon);
 		if (!icon.querySelector("svg")) {
 			icon.empty();
 			setIcon(icon, "tag");
 		}
-		el.createSpan({ cls: "openplug-store-suggest-label", text: option.label });
+		el.createSpan({ cls: "op-store-suggest-label", text: option.label });
 		if (option.count !== null) {
 			el.createSpan({
-				cls: "openplug-store-suggest-count",
+				cls: "op-store-suggest-count",
 				text: option.count.toLocaleString("zh-CN"),
 			});
 		}
-		const check = el.createSpan({ cls: "openplug-store-suggest-check" });
-		if (this.store.isSelected(option.slug)) {
+		const check = el.createSpan({ cls: "op-store-suggest-check" });
+		if (this._store.isSelected(option.slug)) {
 			setIcon(check, "check");
 		}
 	}
@@ -520,11 +523,11 @@ class CategoryModal extends FuzzySuggestModal<CategoryOption> {
 		item: CategoryOption,
 		_evt: MouseEvent | KeyboardEvent,
 	): void {
-		this.store.toggleCategory(item.slug);
+		this._store.toggleCategory(item.slug);
 	}
 
 	onClose(): void {
-		this.store.onModalClosed(this);
+		this._store.onModalClosed(this);
 		super.onClose();
 	}
 }

@@ -23,7 +23,7 @@
 
 Even without a VPN, you can install official Obsidian community plugins and themes with one click.
 
-OpenPlug takes over the official “Add to Obsidian” redirects and completes search, version selection, and verified installation from the official directories, with a Chinese info card and translated descriptions, plus update checks for installed official plugins.
+OpenPlug takes over the official “Add to Obsidian” redirects and completes search, version selection, and verified installation from the official directories, with a Chinese info card and translated descriptions, plus update checks for installed official plugins — and a built-in view for the Obsidian Chinese forum, with optional sign-in for likes and replies.
 
 ## 1. Installation
 
@@ -49,6 +49,10 @@ Type a plugin name, theme name, or author name in the search box and pick a resu
 
 The installer home page automatically checks your installed official plugins for updates (stable versions only) and lists them one by one; click **Update** and restart Obsidian for the new version to take effect. Updates are always started by you, never automatic, and never change a plugin's enabled state.
 
+### 2.4 Browsing the Chinese forum
+
+Click **View** on the home page's “Chinese forum” card to open the built-in forum view: browse by category, latest, or hot topics, or search posts. Browsing works without signing in. Sign-in uses the forum's official device-authorization flow; the key is stored only on your device and can be revoked anytime from the account menu at the top of the forum page. Once signed in, you can like / unlike posts and reply directly below a topic.
+
 ## 3. Features
 
 | Feature | Description |
@@ -60,27 +64,30 @@ The installer home page automatically checks your installed official plugins for
 | Version selection | Lists published versions and installs the newest version compatible with your Obsidian by default; older versions can be picked |
 | Multi-mirror acceleration | Races multiple domestic GitHub mirror nodes with a 30s timeout and SHA-256 cross-verification, auto-switching when a node fails |
 | Theme installation | Installs official themes through the same flow |
+| Chinese forum | Built-in browsing of the Obsidian Chinese forum (categories / latest / hot / search), with optional sign-in for likes and replies; keys stay on your device |
 | Desktop & mobile | Works on Windows / macOS / Linux and iOS / Android |
 | Plugin update checks | The home page lists updatable installed official plugins (stable versions only); updates run one by one, are manual only, and keep each plugin's enabled state |
 | Mirror latency test | One-click latency probe in settings for all built-in mirrors |
 
 ## 4. Network usage & privacy disclosure
 
-At runtime the plugin only makes the following HTTPS requests, all for **public** data:
+At runtime the plugin only makes the following HTTPS requests (all for **public** data, except the optional Chinese-forum sign-in and interactions):
 
 - Official lists: `community-plugins.json` and `community-css-themes.json` (search and redirect resolution).
-- Official community directory API (`community.obsidian.md`): category tags, download counts, and last-update dates. Only category / sort / page parameters are sent; search terms stay local.
+- Official community directory API (`community.obsidian.md`): category tags, download counts, and last-update dates. Category / sort / page parameters are sent; search results and detail pages also send the query term / plugin name to backfill official download counts and update dates (search matching stays local, but backfill requests carry the query term).
 - Domestic GitHub acceleration mirrors (built-in and latency-verified): `gh-proxy.com`, `ghfast.top`, `gh.monlor.com`, `wget.la` — used to download lists, manifests, version compatibility maps (`versions.json`), and plugin files.
 - jsDelivr data API (`data.jsdelivr.com`): plugin version lists (version picker and update checks). When the API is unreachable, update checks read the manifest version through the mirrors above (degraded mode; a release that bumps only its tag but not its manifest may be missed).
 - GitHub tags API (`api.github.com`): one-shot fallback for the detail-page version picker only when the jsDelivr version list is unreachable; cached per plugin for 10 minutes.
 - Preset translation data (public plugin descriptions, no user data): `raw.githubusercontent.com`.
 - Translation APIs (only the **public plugin description text** is sent, for translating uncovered descriptions on the detail page): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
+- Chinese forum (`forum-zh.obsidian.md`): reads public forum data (categories, latest, hot, search, and topic content). **Optional sign-in** goes through the forum's device-authorization endpoints (including `/session/csrf` and authorization polling); after signing in, likes / replies you initiate on the forum page are sent to that site. The authorization key and username are stored only in Obsidian's secure storage on your device, never uploaded to any third party, and can be revoked anytime from the forum page's account menu.
 
-No user data is collected. No telemetry, no ads, no account required. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
+No user data is collected. No telemetry, no ads; the plugin itself needs no account. Forum sign-in is optional and browsing works without it; the sign-in key stays on your device and can be revoked anytime. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
 ## 5. Notes & limitations
 
 - OpenPlug is not an official Obsidian feature — it is a helper for the installation channel only. Plugin / theme content is provided by their respective authors; verify source and permissions yourself.
+- Content on the Chinese forum is posted by its users, who are responsible for their own posts; it is unrelated to the Obsidian team or to this plugin. Verify content and external links yourself when browsing or interacting.
 - Only plugins and themes **already listed in the official community directory** are supported (plugins not in the official list can be installed via [BRAT](https://github.com/TfTHacker/obsidian42-brat)).
 - Mirror nodes are free public services; availability and speed fluctuate with network conditions. If all nodes fail, re-run the latency test in settings and retry.
 - Licensing: this plugin is open source under the [MIT License](./LICENSE). Third-party plugins / themes you install follow their own licenses.

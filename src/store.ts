@@ -26,87 +26,103 @@ const DEFAULT_CATEGORY_SLUGS = [
 	"links",
 ];
 
-/** 官方分类元数据（图标为 Lucide 名，可直接交给 setIcon）。 */
-const CATEGORY_META: Record<string, { label: string; icon: string }> = {
-	ai: { label: "AI", icon: "bot" },
-	annotation: { label: "标注", icon: "highlighter" },
-	appearance: { label: "外观", icon: "palette" },
-	attachments: { label: "附件", icon: "paperclip" },
-	audio: { label: "音频", icon: "audio-lines" },
-	autocomplete: { label: "自动补全", icon: "text-cursor-input" },
-	automation: { label: "自动化", icon: "workflow" },
-	backup: { label: "备份", icon: "archive" },
-	bases: { label: "Bases（数据库）", icon: "layout-list" },
-	calendar: { label: "日历", icon: "calendar" },
-	canvas: { label: "白板", icon: "layout-dashboard" },
-	charts: { label: "图表", icon: "chart-column" },
-	code: { label: "代码", icon: "code" },
-	collaboration: { label: "协作", icon: "users-round" },
-	commands: { label: "命令", icon: "command" },
-	css: { label: "CSS", icon: "file-code" },
-	csv: { label: "CSV", icon: "file-spreadsheet" },
-	data: { label: "数据", icon: "database" },
-	dates: { label: "日期", icon: "calendar-days" },
-	developers: { label: "开发者", icon: "terminal" },
-	drawing: { label: "绘图", icon: "line-squiggle" },
-	editing: { label: "编辑", icon: "pen-line" },
-	emoji: { label: "Emoji", icon: "smile" },
-	export: { label: "导出", icon: "upload" },
-	files: { label: "文件", icon: "file" },
-	finance: { label: "财务", icon: "dollar-sign" },
-	flashcards: { label: "闪卡", icon: "layers" },
-	folders: { label: "文件夹", icon: "folder-open" },
-	fonts: { label: "字体", icon: "book-type" },
-	footnotes: { label: "脚注", icon: "asterisk" },
-	formats: { label: "文件格式", icon: "files" },
-	formatting: { label: "文字排版", icon: "heading-1" },
-	git: { label: "Git", icon: "git-branch" },
-	graph: { label: "关系图谱", icon: "network" },
-	hotkeys: { label: "快捷键", icon: "keyboard" },
-	html: { label: "HTML", icon: "code-xml" },
-	icons: { label: "图标", icon: "shapes" },
-	images: { label: "图片", icon: "image" },
-	import: { label: "导入", icon: "download" },
-	integrations: { label: "第三方集成", icon: "openplug-blocks" },
-	interface: { label: "界面", icon: "monitor" },
-	json: { label: "JSON", icon: "braces" },
-	languages: { label: "翻译与多语言", icon: "languages" },
-	latex: { label: "LaTeX", icon: "sigma" },
-	links: { label: "链接", icon: "link" },
-	markdown: { label: "Markdown", icon: "file-text" },
-	math: { label: "数学", icon: "calculator" },
-	music: { label: "音乐", icon: "music" },
-	navigation: { label: "导航", icon: "binoculars" },
-	ocr: { label: "OCR", icon: "scan-text" },
-	outlining: { label: "大纲", icon: "list-tree" },
-	pdf: { label: "PDF", icon: "file-pen" },
-	"project-management": { label: "项目管理", icon: "kanban" },
-	properties: { label: "属性", icon: "info" },
-	publishing: { label: "发布", icon: "send" },
-	research: { label: "研究", icon: "microscope" },
-	review: { label: "复习与回顾", icon: "clipboard-check" },
-	rtl: { label: "RTL 文字支持", icon: "signpost" },
-	science: { label: "科学", icon: "flask-conical" },
-	search: { label: "搜索", icon: "search" },
-	sidebar: { label: "侧边栏", icon: "panel-left" },
-	snippets: { label: "代码片段", icon: "scissors" },
-	"status-bar": { label: "状态栏", icon: "panel-bottom" },
-	syncing: { label: "同步", icon: "refresh-cw" },
-	syntax: { label: "语法高亮", icon: "hash" },
-	tables: { label: "表格", icon: "table" },
-	tags: { label: "标签", icon: "tag" },
-	tasks: { label: "任务", icon: "square-check" },
-	templating: { label: "模板", icon: "files" },
-	theming: { label: "主题", icon: "paintbrush" },
-	thinking: { label: "思维工具", icon: "brain" },
-	ttrpg: { label: "跑团", icon: "dices" },
-	utilities: { label: "实用工具", icon: "wrench" },
-	video: { label: "视频", icon: "video" },
-	vim: { label: "Vim", icon: "text-cursor" },
-	visualization: { label: "可视化", icon: "chart-pie" },
-	workspaces: { label: "工作区", icon: "panels-top-left" },
-	writing: { label: "写作", icon: "pen-tool" },
-};
+/** 官方分类元数据（图标为 Lucide 名，可直接交给 setIcon）。
+ * 紧凑三列（slug / label / icon）：78 条若逐条写对象会重复 78 次属性键，
+ * 构筑物为此多付一份固定开销；解析一次即建表，语义与逐条对象一致。 */
+const CATEGORY_TABLE = `ai AI bot
+annotation 标注 highlighter
+appearance 外观 palette
+attachments 附件 paperclip
+audio 音频 audio-lines
+autocomplete 自动补全 text-cursor-input
+automation 自动化 workflow
+backup 备份 archive
+bases Bases（数据库） layout-list
+calendar 日历 calendar
+canvas 白板 layout-dashboard
+charts 图表 chart-column
+code 代码 code
+collaboration 协作 users-round
+commands 命令 command
+css CSS file-code
+csv CSV file-spreadsheet
+data 数据 database
+dates 日期 calendar-days
+developers 开发者 terminal
+drawing 绘图 line-squiggle
+editing 编辑 pen-line
+emoji Emoji smile
+export 导出 upload
+files 文件 file
+finance 财务 dollar-sign
+flashcards 闪卡 layers
+folders 文件夹 folder-open
+fonts 字体 book-type
+footnotes 脚注 asterisk
+formats 文件格式 files
+formatting 文字排版 heading-1
+git Git git-branch
+graph 关系图谱 network
+hotkeys 快捷键 keyboard
+html HTML code-xml
+icons 图标 shapes
+images 图片 image
+import 导入 download
+integrations 第三方集成 op-blocks
+interface 界面 monitor
+json JSON braces
+languages 翻译与多语言 languages
+latex LaTeX sigma
+links 链接 link
+markdown Markdown file-text
+math 数学 calculator
+music 音乐 music
+navigation 导航 binoculars
+ocr OCR scan-text
+outlining 大纲 list-tree
+pdf PDF file-pen
+project-management 项目管理 kanban
+properties 属性 info
+publishing 发布 send
+research 研究 microscope
+review 复习与回顾 clipboard-check
+rtl RTL 文字支持 signpost
+science 科学 flask-conical
+search 搜索 search
+sidebar 侧边栏 panel-left
+snippets 代码片段 scissors
+status-bar 状态栏 panel-bottom
+syncing 同步 refresh-cw
+syntax 语法高亮 hash
+tables 表格 table
+tags 标签 tag
+tasks 任务 square-check
+templating 模板 files
+theming 主题 paintbrush
+thinking 思维工具 brain
+ttrpg 跑团 dices
+utilities 实用工具 wrench
+video 视频 video
+vim Vim text-cursor
+visualization 可视化 chart-pie
+workspaces 工作区 panels-top-left
+writing 写作 pen-tool`;
+
+const CATEGORY_META: Record<string, { label: string; icon: string }> = {};
+for (const line of CATEGORY_TABLE.split("\n")) {
+	// 首列 slug、末列 icon、中间整体为 label：label 自身可能含空格
+	// （如「RTL 文字支持」），不能按三列定长切。
+	const fields = line.split(" ");
+	if (fields.length < 3) {
+		continue;
+	}
+	const slug = fields[0];
+	const icon = fields[fields.length - 1];
+	CATEGORY_META[slug] = {
+		label: fields.slice(1, -1).join(" "),
+		icon,
+	};
+}
 
 export type StoreSort = "downloads" | "updated" | "name";
 
@@ -177,7 +193,7 @@ export function buildDefaultCategoryOptions(): CategoryOption[] {
 }
 
 function buildCategoryOptions(
-	facets: Array<{ value: string; count: number }> = [],
+	facets: Array<{ value: string; count: number }>,
 ): CategoryOption[] {
 	const counts = new Map(facets.map((facet) => [facet.value, facet.count]));
 	const slugs = counts.size > 0 ? Array.from(counts.keys()) : DEFAULT_CATEGORY_SLUGS;

@@ -40,7 +40,7 @@ export const SETTINGS_ROOT_ICON_BY_PAGE = {
  * 行首图标的标记类：既是幂等判据（行首已有它即跳过），也是 styles.css 的挂点。
  * 判据与创建必须用同一个常量——两者漂移会让每轮 DOM 变化都再插一枚（观察器自激）。
  */
-export const SETTINGS_ROOT_ROW_ICON_CLASS = "openplug-settings-root-icon";
+export const SETTINGS_ROOT_ROW_ICON_CLASS = "op-settings-root-icon";
 
 /** 行名：宿主 1.14 结构 `.setting-item > .setting-item-info > .setting-item-name`。 */
 function settingsRowName(row: HTMLElement): string {
