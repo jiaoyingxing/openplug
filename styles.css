@@ -447,7 +447,8 @@ body.is-phone .op-pager-btn {
 /* 主页底部：已安装插件更新卡（2026-08-30 用户确认布局——更新板块在
    最下面，注句并入使用方式卡）。2026-10-25 起「作者精选」复用同一张
    板块卡与行样式（用户要求列表结构 + 安装按钮向更新板块对齐）；标题
-   同样在壳外，故卡内不放标题。 */
+   同样在壳外，故卡内不放标题。2026-11-21 起顶部社区卡也复用该表面，
+   行名在卡内（见 view.ts 社区卡）。 */
 .op-updates {
 	margin-top: var(--size-4-3);
 	padding: var(--size-4-3);
@@ -478,6 +479,38 @@ body.is-phone .op-pager-btn {
 
 .op-update-row + .op-update-row {
 	border-top: var(--border-width) solid var(--background-modifier-border);
+}
+
+/* 社区组卡条目：对齐宿主 .setting-group .setting-item 实测形态（2026-11-21
+   用户对照官方设置截图三轮确认）——组卡无内距，条目自带 20px 内距
+   （--setting-items-padding-*），分隔线是第二条目起的 ::before：绝对定位
+   在条目顶边、两端各内缩 padding-x、1px、走宿主分隔线变量，首条
+   content: none。 */
+.op-setting-row {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
+}
+
+.op-setting-items > .op-setting-row:not(:first-child)::before {
+	content: "";
+	position: absolute;
+	top: calc(-1 * var(--border-width));
+	left: var(--setting-items-padding-x);
+	right: var(--setting-items-padding-x);
+	border-top: var(--setting-items-divider-width) solid var(--setting-items-divider-color, var(--background-modifier-border));
+}
+
+.op-community-guide {
+	position: relative;
+	padding: var(--setting-items-padding-y) var(--setting-items-padding-x);
+}
+
+.op-community-guide > .op-update-name {
+	margin-bottom: var(--size-4-2);
 }
 
 .op-update-info {
@@ -543,20 +576,12 @@ body.is-phone .op-pager-btn {
 	padding-left: var(--size-4-2);
 }
 
-/* 主页中文论坛入口：一句介绍作为该行的主文本，字号/字重与其它板块行名一致
-   （2026-11-20 实测量后修正，避免整行只有 12px 副文本而显轻）。 */
-.op-forum-desc {
-	font-size: var(--font-ui-medium);
-	color: var(--text-normal);
-	line-height: var(--line-height-tight);
-}
-
 /* 列表译文：沿用详情译文的竖线/弱化样式，完整展示不截断。 */
 .op-result-trans {
 	margin-top: 2px;
 }
 
-/* 详情卡、操作面板、主页两板块与顶部状态框共用官方「设置组」表面
+/* 详情卡、操作面板、主页板块、社区条目卡与顶部状态框共用官方「设置组」表面
    （SettingGroup 的 --setting-items-* 变量族，Obsidian ≥ 1.11，
    minAppVersion 已覆盖）：主题覆写这些变量时这些板块与设置页卡片同步
    换肤，不再自绘灰底。默认亮色下取 --background-primary-alt（#fafafa，
@@ -565,10 +590,10 @@ body.is-phone .op-pager-btn {
    表面作底壳（2026-08-31 用户要求：去掉的是套在行上的绿/红色块）。 */
 .op-infocard,
 .op-actions,
-.op-home-card,
 .op-updates,
 .op-store,
-.op-banner {
+.op-banner,
+.op-setting-items {
 	background-color: var(
 		--setting-items-background,
 		var(--background-primary-alt, var(--background-secondary))
@@ -589,10 +614,10 @@ body.is-phone .op-pager-btn {
    即正常观感。 */
 body.op-android:not(.theme-dark) .op-infocard,
 body.op-android:not(.theme-dark) .op-actions,
-body.op-android:not(.theme-dark) .op-home-card,
 body.op-android:not(.theme-dark) .op-updates,
 body.op-android:not(.theme-dark) .op-store,
-body.op-android:not(.theme-dark) .op-banner {
+body.op-android:not(.theme-dark) .op-banner,
+body.op-android:not(.theme-dark) .op-setting-items {
 	--setting-items-background: var(
 		--background-primary-alt,
 		var(--background-secondary)
@@ -606,23 +631,18 @@ body.op-android:not(.theme-dark) .op-banner {
    已验收的安卓修复背上解析兼容风险。取值、亮色限定与安卓条逐字一致。 */
 body.op-ios:not(.theme-dark) .op-infocard,
 body.op-ios:not(.theme-dark) .op-actions,
-body.op-ios:not(.theme-dark) .op-home-card,
 body.op-ios:not(.theme-dark) .op-updates,
 body.op-ios:not(.theme-dark) .op-store,
-body.op-ios:not(.theme-dark) .op-banner {
+body.op-ios:not(.theme-dark) .op-banner,
+body.op-ios:not(.theme-dark) .op-setting-items {
 	--setting-items-background: var(
 		--background-primary-alt,
 		var(--background-secondary)
 	);
 }
 
-/* 主页顶部：使用方式整体卡（含注句，注句不垫页底） */
-.op-home-card {
-	padding: var(--size-4-3);
-}
-
-/* 「官方社区」卡收合：展开态末尾的「明白」按钮右对齐，收合后卡内只剩
-   一行短句与「查看」（行样式复用更新卡，故此处只管按钮行）。 */
+/* 社区卡展开态末尾的「明白」按钮右对齐；点后该卡就地换成入口行
+   （行样式复用更新卡，故此处只管按钮行）。 */
 .op-guide-dismiss-row {
 	display: flex;
 	justify-content: flex-end;

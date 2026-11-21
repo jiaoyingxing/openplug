@@ -82,6 +82,8 @@ At runtime the plugin only makes the following HTTPS requests (all for **public*
 - Translation APIs (only the **public plugin description text** is sent, for translating uncovered descriptions on the detail page): `uapis.cn` (primary), `api.mymemory.translated.net` (fallback).
 - Chinese forum (`forum-zh.obsidian.md`): reads public forum data (categories, latest, hot, search, and topic content). **Optional sign-in** goes through the forum's device-authorization endpoints (including `/session/csrf` and authorization polling); after signing in, likes / replies you initiate on the forum page are sent to that site. The authorization key and username are stored only in Obsidian's secure storage on your device, never uploaded to any third party, and can be revoked anytime from the forum page's account menu.
 
+**Local cache**: to make reopening faster, the official lists (plugins / themes) and update-check results are cached in your local browser storage. They stay on your device and are never uploaded; the cache refreshes in the background and expires automatically.
+
 No user data is collected. No telemetry, no ads; the plugin itself needs no account. Forum sign-in is optional and browsing works without it; the sign-in key stays on your device and can be revoked anytime. Update checks compare your installed plugins with the official list locally — no installation data is uploaded.
 
 ## 5. Notes & limitations

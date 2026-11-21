@@ -50,6 +50,9 @@ function readCache(): CachedPayload | null {
 	}
 }
 
+/** 缓存解析一次即可（loadPresetTranslations 的入口读表会复用这次结果）。 */
+let cachedAt: number | null = null;
+
 function ensureCacheLoaded(): void {
 	if (cacheLoaded) {
 		return;
@@ -58,6 +61,7 @@ function ensureCacheLoaded(): void {
 	const cached = readCache();
 	if (cached) {
 		translations = new Map(Object.entries(cached.entries));
+		cachedAt = cached.at;
 	}
 }
 
@@ -100,8 +104,8 @@ export function getPresetTranslation(id: string): string | null {
 /** 启动/打开视图时后台刷新；同轮请求去重，失败保留旧缓存。 */
 export async function loadPresetTranslations(): Promise<void> {
 	ensureCacheLoaded();
-	const cached = readCache();
-	if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+	// 复用 ensureCacheLoaded 已解析的结果，不再二次 JSON.parse（22KB 两份）。
+	if (cachedAt !== null && Date.now() - cachedAt < CACHE_TTL_MS) {
 		return;
 	}
 	if (loadPromise) {
@@ -125,6 +129,7 @@ export async function loadPresetTranslations(): Promise<void> {
 					CACHE_KEY,
 					JSON.stringify({ at: Date.now(), entries }),
 				);
+				cachedAt = Date.now();
 			} catch {
 				// 缓存写入失败不影响本次会话查表
 			}

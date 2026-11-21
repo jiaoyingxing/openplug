@@ -17,6 +17,8 @@ const COLD_START_SETTLE_MS = 500;
 /** 冷启动焦点轮询：间隔与最大次数（窗口约 200ms × 8 = 1.6s 内有限重夺）。 */
 const COLD_START_RECLAIM_INTERVAL_MS = 200;
 const COLD_START_RECLAIM_MAX_ATTEMPTS = 8;
+/** 预置简翻刷新延后：等宿主自身启动与首屏渲染过去，再占网络与主线程。 */
+const PRESET_REFRESH_DELAY_MS = 2000;
 /** 官方社区 integrations 图标；宿主把 `blocks` 别名成 layout-list，故用前缀独立注册。 */
 const OPENPLUG_BLOCKS_ICON = "op-blocks";
 /** Lucide 为 24 视口，addIcon 的自定义图标固定 100 视口，故按 100/24 放大。 */
@@ -96,7 +98,7 @@ export default class OpenplugPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		addIcon(OPENPLUG_BLOCKS_ICON, OPENPLUG_BLOCKS_SVG);
-		void loadPresetTranslations();
+		this._schedulePresetRefresh();
 		this.registerView(
 			VIEW_TYPE_PICKER,
 			(leaf: WorkspaceLeaf) => new OpenplugPickerView(leaf),
@@ -165,6 +167,27 @@ export default class OpenplugPlugin extends Plugin {
 				}
 			}
 		}
+	}
+
+	/**
+	 * 预置简翻刷新挪出启动窗口：缓存命中时 `loadPresetTranslations` 只读一次
+	 * localStorage 就返回；缓存过期时会同时向 raw + 4 镜像发请求，放在
+	 * onload 里会和宿主自身启动、清单加载抢带宽。等布局就绪后再起跑，
+	 * 用户此时已经能看见界面，译文行仍在本轮内补齐。
+	 */
+	private _schedulePresetRefresh(): void {
+		const run = (): void => {
+			void loadPresetTranslations();
+		};
+		const workspace = this.app.workspace;
+		if (workspace.layoutReady) {
+			// 布局已就绪（热重载插件）：让出一拍即可，不必再等
+			this.registerInterval(window.setTimeout(run, PRESET_REFRESH_DELAY_MS));
+			return;
+		}
+		workspace.onLayoutReady(() => {
+			this.registerInterval(window.setTimeout(run, PRESET_REFRESH_DELAY_MS));
+		});
 	}
 
 	/**

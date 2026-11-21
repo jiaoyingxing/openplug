@@ -95,7 +95,9 @@ export class StoreSection {
 		}
 		this._renderChips();
 		this._updateVisibility();
-		void this._loadCategories();
+		// 分类 facet 只在真正打开分类弹窗时拉（首次点「分类筛选」）。
+		// 主页每次挂载都预拉会让冷启动多背一次 key 页（66KB）+ facet 请求，
+		// 而默认 8 个分类已够开局使用。
 		if (this._selectedTags.size === 0 || this._searchActive) {
 			return;
 		}

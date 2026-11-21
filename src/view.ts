@@ -4,6 +4,7 @@ import { VIEW_TYPE_PICKER } from "./consts";
 import { openForumView } from "./forum-view";
 import { createPager, PagerHandle } from "./pager";
 import { getPresetTranslation } from "./preset-translations";
+import { readLocalCache, writeLocalCache } from "./local-cache";
 import {
 	compareSearchHit,
 	SearchSort,
@@ -50,12 +51,64 @@ const UPDATES_PAGE_SIZE = 5;
  * （2026-10-25 用户要求）。 */
 const SELF_PLUGIN_ID = "openplug";
 
-/** 官方社区官网（主页「官方社区」引导卡与收合后的「查看」共用）。 */
+/** 官方社区官网（主页社区卡三步引导第一步链接与收合后的「查看」共用）。 */
 const COMMUNITY_URL = "https://community.obsidian.md/";
 
-/** 「官方社区」引导卡收合标记：点过「明白」后按库记住，重开安装器仍是
- * 短句形态（2026-11-20 用户要求）。 */
+/** 社区卡引导收合标记：三步引导点过「明白」后按库记住，重开安装器仍是
+ * 双行入口形态（2026-11-21 社区卡合并后沿用原键）。 */
 const COMMUNITY_GUIDE_KEY = "openplug-community-guide-dismissed";
+
+/** 跨会话缓存键（IndexedDB，见 `src/local-cache.ts`）。官方清单 3.2MB，
+ * 冷启动重下会在宿主启动窗口里占掉数秒，故落盘复用。 */
+const PLUGIN_LIST_CACHE_KEY = "plugin-list-v1";
+const THEME_LIST_CACHE_KEY = "theme-list-v1";
+/** 更新检查的「每插件最新稳定版」缓存（TTL 1h，与内存表同口径）。 */
+const UPDATE_CACHE_KEY = "update-latest-v1";
+/** 缓存视为新鲜的时长：期内冷启动直接用落盘清单、完全不联网。取 6 小时是
+ * 速度与新鲜度的折中——每天常用也只会后台刷新 2–4 次，新上架插件最多滞后
+ * 半天；超过此期仍先用手上这份（stale-while-revalidate），不设硬失效，
+ * 避免离线时清单整个消失。 */
+const LIST_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface CachedList<T> {
+	at: number;
+	items: T[];
+}
+
+/** 落盘数据来自上一个会话，按结构校验后再用；形状不符就当没缓存。 */
+function isUsableCachedList<T>(
+	cached: { at?: unknown; items?: unknown } | null,
+	isItem: (item: unknown) => boolean,
+): cached is CachedList<T> {
+	if (!cached || typeof cached.at !== "number" || !Array.isArray(cached.items)) {
+		return false;
+	}
+	if (cached.items.length === 0) {
+		return false;
+	}
+	// 抽查首尾两条即可：整表来自同一次 JSON.parse，局部损坏概率可忽略
+	const items = cached.items;
+	return isItem(items[0]) && isItem(items[items.length - 1]);
+}
+
+function isPluginListItem(item: unknown): boolean {
+	const entry = item as Partial<PluginListItem> | null;
+	return (
+		!!entry
+		&& typeof entry.id === "string"
+		&& typeof entry.name === "string"
+		&& typeof entry.repo === "string"
+	);
+}
+
+function isThemeListItem(item: unknown): boolean {
+	const entry = item as Partial<ThemeListItem> | null;
+	return (
+		!!entry
+		&& typeof entry.name === "string"
+		&& typeof entry.repo === "string"
+	);
+}
 
 type BannerState = "is-loading" | "is-success" | "is-error";
 
@@ -148,9 +201,15 @@ export class OpenplugPickerView extends ItemView {
 	/** 清单加载单飞：并发调用共享同一轮请求，失败后下次重试（两条清单各自独立）。 */
 	private _pluginListPromise: Promise<void> | null = null;
 	private _themeListPromise: Promise<void> | null = null;
-	/** 更新检测的最新版本缓存（TTL 内不重复请求 jsDelivr；键 = 插件 id）。 */
+	/** 更新检测的最新版本缓存（TTL 内不重复请求 jsDelivr；键 = 插件 id）。
+	 * 冷启动从 IndexedDB 预载（见 `_preloadUpdateCache`），TTL 内整轮更新
+	 * 检查零网络请求——此前该缓存只在内存，每次冷启动都要重打 12+ 个
+	 * jsDelivr 请求（实测 0.9–1.8s）。 */
 	private _updateLatestCache = new Map<string, { latest: string; at: number }>();
 	private static readonly _UPDATE_CACHE_TTL_MS = 60 * 60 * 1000;
+	/** 落盘写回状态：脏标记 + 合并写（一次检查会连查多个插件）。 */
+	private _updateCacheDirty = false;
+	private _updateCacheWriteQueued = false;
 	/** 主页重建竞态序号：搜索/关闭等动作重建主页后，旧检测结果不得写 DOM。 */
 	private _updatesSeq = 0;
 	/** 更新板块结果壳：行区 + 常驻翻页条；翻页只重绘行区（焦点不丢）。 */
@@ -191,6 +250,70 @@ export class OpenplugPickerView extends ItemView {
 			this._renderEmptyState(this._bodyEl);
 		}
 		void this._ensureLists();
+		// 更新检查的版本缓存与界面并行预载：主页首绘不等它，检查本身等。
+		void this._preloadUpdateCache();
+	}
+
+	/**
+	 * 更新检查的版本缓存预载（冷启动零网络的关键）：上次会话写下的
+	 * 「每插件最新稳定版」在 TTL 内直接复用，整轮检查不再请求 jsDelivr。
+	 * 与 `_ensureLists` 并行起跑，更新检查 await 到即用。
+	 */
+	private _updateCacheReady: Promise<void> | null = null;
+
+	private _preloadUpdateCache(): Promise<void> {
+		if (!this._updateCacheReady) {
+			this._updateCacheReady = readLocalCache<
+				Record<string, { latest: string; at: number }>
+			>(UPDATE_CACHE_KEY).then((stored) => {
+				if (!stored) {
+					return;
+				}
+				const now = Date.now();
+				for (const [id, entry] of Object.entries(stored)) {
+					if (
+						entry
+						&& typeof entry.latest === "string"
+						&& typeof entry.at === "number"
+						&& now - entry.at < OpenplugPickerView._UPDATE_CACHE_TTL_MS
+					) {
+						// 内存里已有的（本会话已查过）优先，不被旧落盘覆盖
+						if (!this._updateLatestCache.has(id)) {
+							this._updateLatestCache.set(id, { latest: entry.latest, at: entry.at });
+						}
+					}
+				}
+				// 预载完成时若本轮尚无新查询（dirty 仍为 false），落盘内容与内存一致；
+				// 若已有新结果进来，dirty 保持，由合并写回把整表刷下去。
+				if (!this._updateCacheDirty) {
+					this._updateCacheWriteQueued = false;
+				}
+			});
+		}
+		return this._updateCacheReady;
+	}
+
+	/**
+	 * 回写版本缓存：整轮检查中会连续查询多个插件，故合并到微任务之后写一次；
+	 * 落盘内容是内存表全量，晚写的覆盖早写的，不会丢条目。
+	 */
+	private _persistUpdateCache(): void {
+		if (this._updateCacheWriteQueued) {
+			return;
+		}
+		this._updateCacheWriteQueued = true;
+		void Promise.resolve().then(() => {
+			this._updateCacheWriteQueued = false;
+			if (!this._updateCacheDirty) {
+				return;
+			}
+			this._updateCacheDirty = false;
+			const plain: Record<string, { latest: string; at: number }> = {};
+			for (const [id, entry] of this._updateLatestCache) {
+				plain[id] = entry;
+			}
+			void writeLocalCache(UPDATE_CACHE_KEY, plain);
+		});
 	}
 
 	async onClose(): Promise<void> {
@@ -420,6 +543,9 @@ export class OpenplugPickerView extends ItemView {
 
 	private _renderEmptyState(container: HTMLElement): void {
 		container.empty();
+		// 首页每次重建都是一轮新的已装判定：让「更新」与「作者精选」共用
+		// 本轮的一次枚举，但不跨轮沿用（插件可能在别处被装/删）。
+		this._invalidateInstalledCache();
 		const wrap = container.createDiv({ cls: "op-empty" });
 		const store = this._ensureStoreSection();
 		if (this._storeAddHost) {
@@ -429,15 +555,11 @@ export class OpenplugPickerView extends ItemView {
 			cls: "op-store-anchor",
 		});
 		store.mountResults(storeResultsEl);
-		// 顶部「官方社区」：标题在壳外（设置页观感），卡内只放 3 步编号。
-		// 用户看过一次后这段说明就失去作用，故支持「明白」收合为一句 +
-		// 「查看」（2026-11-20 用户要求，收合状态按库记忆）。
-		wrap.createDiv({ cls: "op-heading", text: "官方社区" });
-		this._renderCommunityGuide(wrap);
-		// 「中文论坛」放在官方社区之后、插件更新之前：只保留标题、一句说明
-		// 与「查看」；首次点击的下载/启用进度走现役顶部状态行（2026-11-20
-		// 用户定稿，不再在卡内新增状态文案）。
-		this._renderForumEntry(wrap);
+		// 顶部社区卡：官方社区与中文论坛合成一张卡，外层标题与描述句取消
+		// （2026-11-21 用户定稿）。首次使用在「官方社区」行内嵌三步引导
+		// （2026-08-30 三句定稿原文不动），点「明白」就地收合为双行入口
+		// 并按库记忆；收合态每行只有行名 +「查看」。
+		this._renderCommunityCard(wrap);
 		// 底部「插件更新」：标题在壳外（设置页观感），卡内只放检查状态与行。
 		// 打开即自动检查（TTL 缓存兜底，决策见 DECISIONS「更新检测」）。
 		wrap.createDiv({ cls: "op-heading", text: "插件更新" });
@@ -448,96 +570,98 @@ export class OpenplugPickerView extends ItemView {
 		void this._renderAuthorPicks(wrap);
 	}
 
-	/** 主页「官方社区」引导卡：默认展开三步说明 +「明白」；点「明白」后
-	 * 收合为一句短句 +「查看」，按库记忆（2026-11-20 用户要求）。 */
-	private _renderCommunityGuide(wrap: HTMLElement): void {
-		const card = wrap.createDiv({ cls: "op-home-card" });
+	/** 主页社区组卡：官方社区与中文论坛两条目共居一张组卡，对齐宿主
+	 * setting-group 形态（组卡无内距，条目自带 20px 内距，条目间分隔线
+	 * 两端内缩；2026-11-21 用户对照官方设置截图两轮确认）。首次使用
+	 * 「官方社区」条目内嵌三步引导 +「明白」，点后就地换成入口行并按库
+	 * 记忆；引导态入口是第一步内链接，不放「查看」按钮，三句沿用
+	 * 2026-08-30 定稿原文。 */
+	private _renderCommunityCard(wrap: HTMLElement): void {
+		const card = wrap.createDiv({ cls: "op-setting-items" });
+		const fillRow = (
+			row: HTMLElement,
+			name: string,
+			label: string,
+			open: () => void,
+		): void => {
+			const info = row.createDiv({ cls: "op-update-info" });
+			info.createDiv({ cls: "op-update-name", text: name });
+			const btn = row.createEl("button", {
+				cls: "op-update-btn",
+				text: "查看",
+			});
+			// label 显式传字面量而非模板拼接：verify:runtime 对定稿词逐字断言
+			btn.setAttribute("aria-label", label);
+			btn.addEventListener("click", open);
+		};
+		const entryRow = (
+			name: string,
+			label: string,
+			open: () => void,
+		): void => {
+			fillRow(card.createDiv({ cls: "op-setting-row" }), name, label, open);
+		};
 		let collapsed = false;
 		try {
 			collapsed = this.app.loadLocalStorage(COMMUNITY_GUIDE_KEY) === true;
 		} catch {
 			// 读取失败按未收合处理
 		}
-		const renderCollapsed = (): void => {
-			const row = card.createDiv({ cls: "op-update-row" });
-			row.createDiv({
-				cls: "op-result-desc op-forum-desc",
-				text: "访问官方社区，查看完整插件介绍。",
-			});
-			const btn = row.createEl("button", {
-				cls: "op-update-btn",
-				text: "查看",
-			});
-			btn.setAttribute("aria-label", "查看官方社区");
-			btn.addEventListener("click", () => {
-				openExternal(COMMUNITY_URL);
-			});
-		};
-		const renderExpanded = (): void => {
-			const ol = card.createEl("ol", { cls: "op-steps" });
-			// 5 句压缩为 3 句编号（2026-08-30 用户要求）：1+2 融合浏览/筛选，
-			// 4 + 附注融合完成/搜索替代；官方社区链接、Add to Obsidian 语义
-			// 与核心流程不减。第 3 句三连修（2026-08-30 用户复核）：同意弹窗
-			// 在浏览器侧而非 Obsidian 内；安装需用户手动点按钮、非同意即装；
-			// 删除后半句（搜索栏位于顶部、不言自明）。第一步单独构建以嵌入
-			// 官方社区链接；后两步按顺序追加。
-			const first = ol.createEl("li");
-			first.append("打开 ");
-			const communityLink = first.createEl("a", {
-				text: "Obsidian 官方社区",
-				href: COMMUNITY_URL,
-			});
-			communityLink.addEventListener("click", (e) => {
-				e.preventDefault();
-				openExternal(COMMUNITY_URL);
-			});
-			first.append("，筛选并找到你需要的插件或主题");
-			for (const s of [
-				'进入插件/主题页面，点击“Add to Obsidian”',
-				"在浏览器中同意打开 Obsidian，回到本面板后点击安装按钮完成安装",
-			]) {
-				ol.createEl("li", { text: s });
-			}
-			const row = card.createDiv({ cls: "op-guide-dismiss-row" });
-			const btn = row.createEl("button", {
-				cls: "op-update-btn",
-				text: "明白",
-			});
-			btn.setAttribute("aria-label", "明白了，收起官方社区说明");
-			btn.addEventListener("click", () => {
-				try {
-					this.app.saveLocalStorage(COMMUNITY_GUIDE_KEY, true);
-				} catch {
-					// 写入失败仍就地收合，下次打开会重新展开
-				}
-				card.empty();
-				renderCollapsed();
-			});
-		};
 		if (collapsed) {
-			renderCollapsed();
-		} else {
-			renderExpanded();
+			entryRow("官方社区", "查看官方社区", () => {
+				openExternal(COMMUNITY_URL);
+			});
+			entryRow("中文论坛", "查看中文论坛", () => {
+				void openForumView(this.app);
+			});
+			return;
 		}
-	}
-
-	/** 主页「中文论坛」入口：只保留标题、一句说明和「查看」；论坛视图
-	 * 已内置在核心，点击直接打开，不再有安装/加载态（2026-11-20 用户定稿）。 */
-	private _renderForumEntry(wrap: HTMLElement): void {
-		wrap.createDiv({ cls: "op-heading", text: "中文论坛" });
-		const card = wrap.createDiv({ cls: "op-updates" });
-		const row = card.createDiv({ cls: "op-update-row" });
-		const info = row.createDiv({ cls: "op-update-info" });
-		info.createDiv({
-			cls: "op-result-desc op-forum-desc",
-			text: "浏览中文论坛，参与讨论。",
+		const guide = card.createDiv({ cls: "op-community-guide" });
+		guide.createDiv({ cls: "op-update-name", text: "官方社区" });
+		const ol = guide.createEl("ol", { cls: "op-steps" });
+		// 5 句压缩为 3 句编号（2026-08-30 用户要求）：1+2 融合浏览/筛选，
+		// 4 + 附注融合完成/搜索替代；官方社区链接、Add to Obsidian 语义
+		// 与核心流程不减。第一步单独构建以嵌入官方社区链接；后两步按
+		// 顺序追加。
+		const first = ol.createEl("li");
+		first.append("打开 ");
+		const communityLink = first.createEl("a", {
+			text: "Obsidian 官方社区",
+			href: COMMUNITY_URL,
 		});
+		communityLink.addEventListener("click", (e) => {
+			e.preventDefault();
+			openExternal(COMMUNITY_URL);
+		});
+		first.append("，筛选并找到你需要的插件或主题");
+		for (const s of [
+			'进入插件/主题页面，点击“Add to Obsidian”',
+			"在浏览器中同意打开 Obsidian，回到本面板后点击安装按钮完成安装",
+		]) {
+			ol.createEl("li", { text: s });
+		}
+		const row = guide.createDiv({ cls: "op-guide-dismiss-row" });
 		const btn = row.createEl("button", {
-			text: "查看",
 			cls: "op-update-btn",
+			text: "明白",
 		});
-		btn.setAttribute("aria-label", "查看中文论坛");
+		btn.setAttribute("aria-label", "明白了，收起官方社区说明");
 		btn.addEventListener("click", () => {
+			try {
+				this.app.saveLocalStorage(COMMUNITY_GUIDE_KEY, true);
+			} catch {
+				// 写入失败仍就地收合，下次打开会重新展开
+			}
+			// 就地换成入口条目：清空引导内容、换条目类、补入口行（同卡同
+			// 位置，不整页重渲染）；中文论坛条目不受影响。
+			guide.empty();
+			guide.removeClass("op-community-guide");
+			guide.addClass("op-setting-row");
+			fillRow(guide, "官方社区", "查看官方社区", () => {
+				openExternal(COMMUNITY_URL);
+			});
+		});
+		entryRow("中文论坛", "查看中文论坛", () => {
 			void openForumView(this.app);
 		});
 	}
@@ -546,18 +670,53 @@ export class OpenplugPickerView extends ItemView {
 			return Promise.resolve();
 		}
 		if (!this._pluginListPromise) {
-			this._pluginListPromise = fetchPluginList()
-				.then((list) => {
-					this._listCache = list;
-				})
-				.catch(() => {
-					// 清单拉取失败保持空缓存，由调用方显示错误态；协议劫持路径不受影响
-				})
-				.finally(() => {
-					this._pluginListPromise = null;
-				});
+			this._pluginListPromise = this._loadPluginList().finally(() => {
+				this._pluginListPromise = null;
+			});
 		}
 		return this._pluginListPromise;
+	}
+
+	/**
+	 * 清单加载（stale-while-revalidate）：先取 IndexedDB 里的上次成功结果
+	 * 立刻可用，再按新鲜度决定是否后台拉新版。官方清单 3.2MB（10,666 条），
+	 * 冷启动每次重下会在宿主启动窗口里占掉数秒；TTL 内直接用缓存、不联网。
+	 *
+	 * 只在「本次没有任何缓存」时才等网络（首次安装 / 缓存被清），失败仍由
+	 * 调用方显示错误态；有缓存时网络失败保留旧清单，本次照常可用。
+	 */
+	private async _loadPluginList(): Promise<void> {
+		let freshCache = false;
+		if (!this._listCache) {
+			const cached = await readLocalCache<CachedList<PluginListItem>>(
+				PLUGIN_LIST_CACHE_KEY,
+			);
+			if (cached && isUsableCachedList<PluginListItem>(cached, isPluginListItem)) {
+				this._listCache = cached.items;
+				freshCache = Date.now() - cached.at < LIST_CACHE_TTL_MS;
+			}
+		}
+		if (freshCache) {
+			return;
+		}
+		const refresh = fetchPluginList()
+			.then((list) => {
+				if (list.length > 0) {
+					this._listCache = list;
+					void writeLocalCache(PLUGIN_LIST_CACHE_KEY, {
+						at: Date.now(),
+						items: list,
+					} satisfies CachedList<PluginListItem>);
+				}
+			})
+			.catch(() => {
+				// 有缓存时保留旧清单；无缓存时由调用方显示错误态
+			});
+		if (this._listCache) {
+			void refresh;
+			return;
+		}
+		await refresh;
 	}
 
 	private _ensureThemeList(): Promise<void> {
@@ -565,18 +724,46 @@ export class OpenplugPickerView extends ItemView {
 			return Promise.resolve();
 		}
 		if (!this._themeListPromise) {
-			this._themeListPromise = fetchThemeList()
-				.then((list) => {
-					this._themeListCache = list;
-				})
-				.catch(() => {
-					// 同上
-				})
-				.finally(() => {
-					this._themeListPromise = null;
-				});
+			this._themeListPromise = this._loadThemeList().finally(() => {
+				this._themeListPromise = null;
+			});
 		}
 		return this._themeListPromise;
+	}
+
+	/** 主题清单同插件清单走 stale-while-revalidate（185KB，量小但同源同策）。 */
+	private async _loadThemeList(): Promise<void> {
+		let freshCache = false;
+		if (!this._themeListCache) {
+			const cached = await readLocalCache<CachedList<ThemeListItem>>(
+				THEME_LIST_CACHE_KEY,
+			);
+			if (cached && isUsableCachedList<ThemeListItem>(cached, isThemeListItem)) {
+				this._themeListCache = cached.items;
+				freshCache = Date.now() - cached.at < LIST_CACHE_TTL_MS;
+			}
+		}
+		if (freshCache) {
+			return;
+		}
+		const refresh = fetchThemeList()
+			.then((list) => {
+				if (list.length > 0) {
+					this._themeListCache = list;
+					void writeLocalCache(THEME_LIST_CACHE_KEY, {
+						at: Date.now(),
+						items: list,
+					} satisfies CachedList<ThemeListItem>);
+				}
+			})
+			.catch(() => {
+				// 同上
+			});
+		if (this._themeListCache) {
+			void refresh;
+			return;
+		}
+		await refresh;
 	}
 
 	/** 主页预拉与搜索共用：两条清单并行加载，任一失败不影响另一条。 */
@@ -1057,7 +1244,10 @@ export class OpenplugPickerView extends ItemView {
 			return;
 		}
 
-		const installed = await this._enumerateInstalledPlugins();
+		const [installed] = await Promise.all([
+			this._enumerateInstalledPlugins(),
+			this._preloadUpdateCache(),
+		]);
 		if (seq !== this._updatesSeq) {
 			return;
 		}
@@ -1115,6 +1305,8 @@ export class OpenplugPickerView extends ItemView {
 			latest = await fetchUpdateTarget(entry.repo, installed.version);
 			if (latest) {
 				this._updateLatestCache.set(installed.id, { latest, at: now });
+				this._updateCacheDirty = true;
+				this._persistUpdateCache();
 			}
 		}
 		// 数字更高才提示：≠ 会把本机更高（预发布装机/BRAT/上游 tag 时序）
@@ -1135,13 +1327,44 @@ export class OpenplugPickerView extends ItemView {
 		return null;
 	}
 
-	/** 枚举本库已安装插件：插件目录里有 manifest 就算已安装（启用与否同理）。 */
-	private async _enumerateInstalledPlugins(): Promise<InstalledPluginCheck[]> {
+	/**
+	 * 枚举本库已安装插件：插件目录里有 manifest 就算已安装（启用与否同理）。
+	 *
+	 * 逐个串行读 36 个 manifest 实测 11–62ms，且「更新」与「作者精选」会各
+	 * 枚举一次；这里并发读（限 8 路，避免一次性打爆适配器）并按会话缓存，
+	 * 两边共用同一份结果。安装/更新完成后调用 `_invalidateInstalledCache`
+	 * 让下次重算（新装的插件要立刻从精选里消失）。
+	 */
+	private _installedCache: Promise<InstalledPluginCheck[]> | null = null;
+
+	private _enumerateInstalledPlugins(): Promise<InstalledPluginCheck[]> {
+		if (!this._installedCache) {
+			this._installedCache = this._readInstalledPlugins().catch(() => []);
+		}
+		return this._installedCache;
+	}
+
+	private _invalidateInstalledCache(): void {
+		this._installedCache = null;
+	}
+
+	private async _readInstalledPlugins(): Promise<InstalledPluginCheck[]> {
 		const base = `${this.app.vault.configDir}/plugins`;
 		const result: InstalledPluginCheck[] = [];
+		let folders: string[] = [];
 		try {
-			const listed = await this.app.vault.adapter.list(base);
-			for (const folder of listed.folders) {
+			folders = (await this.app.vault.adapter.list(base)).folders;
+		} catch {
+			// 插件目录不存在视为无已安装插件，不视为检查失败
+			return result;
+		}
+		const pending = folders.slice();
+		const worker = async (): Promise<void> => {
+			for (;;) {
+				const folder = pending.shift();
+				if (folder === undefined) {
+					return;
+				}
 				try {
 					const name = folder.split("/").pop() ?? folder;
 					const raw = await this.app.vault.adapter.read(
@@ -1155,9 +1378,10 @@ export class OpenplugPickerView extends ItemView {
 					// 缺 manifest 的目录跳过（如已删除插件的残留）
 				}
 			}
-		} catch {
-			// 插件目录不存在视为无已安装插件，不视为检查失败
-		}
+		};
+		await Promise.all(
+			Array.from({ length: Math.min(8, pending.length) }, () => worker()),
+		);
 		return result;
 	}
 
@@ -1325,8 +1549,7 @@ export class OpenplugPickerView extends ItemView {
 		const seq = ++this._picksSeq;
 		const installed = new Set(
 			(await this._enumerateInstalledPlugins()).map((i) => i.id),
-		);
-		if (seq !== this._picksSeq) {
+		);		if (seq !== this._picksSeq) {
 			return;
 		}
 		const picks = AUTHOR_PICKS.filter((p) => !installed.has(p.id));
@@ -1430,6 +1653,8 @@ export class OpenplugPickerView extends ItemView {
 			if (!result.joined) {
 				line.update(successText, "is-success");
 			}
+			// 安装/更新落盘后已装集合变了：让「作者精选」等下次重算
+			this._invalidateInstalledCache();
 			onSuccess?.();
 		} catch (e) {
 			// 并入在途任务时由原操作落错误态；仅当本轮真正发起/排了下载，

@@ -218,8 +218,12 @@ async function withRetry<T>(fn: () => Promise<T>, times = 2): Promise<T> {
 	throw last instanceof Error ? last : new Error(String(last));
 }
 
+/** 官方清单 3.2MB：4 镜像同时抓会在启动时占满 ~12.8MB 下行，故首页
+ * 预拉只竞速前两个（gh-proxy / ghfast），失败再退回全池重试。 */
+const LIST_MIRROR_SAMPLE = 2;
+
 export async function fetchPluginList(): Promise<PluginListItem[]> {
-	return withRetry(() => promiseAny(MIRRORS.map((m) => getPluginListFrom(m))));
+	return fetchListWithFallback((m) => getPluginListFrom(m));
 }
 
 async function getPluginListFrom(mirror: Mirror): Promise<PluginListItem[]> {
@@ -238,7 +242,18 @@ export interface ThemeListItem {
 }
 
 export async function fetchThemeList(): Promise<ThemeListItem[]> {
-	return withRetry(() => promiseAny(MIRRORS.map((m) => getThemeListFrom(m))));
+	return fetchListWithFallback((m) => getThemeListFrom(m));
+}
+
+/** 先少量镜像竞速，全失败再全池重试一次（清单体量大，少一路即少一份流量）。 */
+async function fetchListWithFallback<T>(
+	fetchFrom: (mirror: Mirror) => Promise<T>,
+): Promise<T> {
+	try {
+		return await promiseAny(MIRRORS.slice(0, LIST_MIRROR_SAMPLE).map(fetchFrom));
+	} catch {
+		return withRetry(() => promiseAny(MIRRORS.map(fetchFrom)), 1);
+	}
 }
 
 async function getThemeListFrom(mirror: Mirror): Promise<ThemeListItem[]> {
